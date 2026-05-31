@@ -26,24 +26,20 @@ def allowed_file(filename):
 def analyze_uber_data(df):
     """Core analysis engine - works on any driver's data"""
     
-    # Filter to completed trips with fares
     df = df[df['status'] == 'completed'].copy() if 'status' in df.columns else df.copy()
     df = df[df['original_fare_usd'] > 0].copy() if 'original_fare_usd' in df.columns else df.copy()
     
     if len(df) == 0:
         return None
     
-    # Calculate key metrics
     df['duration_min'] = (df['trip_duration_seconds'] / 60).round(2)
     df['uber_take_rate'] = ((df['original_fare_usd'] - df['driver_upfront_fare_usd']) / df['original_fare_usd'] * 100).round(1)
     df['fair_driver_pay'] = (df['original_fare_usd'] * 0.75).round(2)
     df['shortfall'] = (df['fair_driver_pay'] - df['driver_upfront_fare_usd']).clip(lower=0).round(2)
     
-    # Date parsing
     df['date'] = pd.to_datetime(df['begintrip_timestamp_local'], errors='coerce')
     df['month'] = df['date'].dt.to_period('M').astype(str)
     
-    # Monthly breakdown
     monthly = df.groupby('month').agg(
         trips=('driver_upfront_fare_usd', 'count'),
         rider_total=('original_fare_usd', 'sum'),
@@ -52,13 +48,11 @@ def analyze_uber_data(df):
         shortfall=('shortfall', 'sum')
     ).round(2).reset_index()
     
-    # Worst trips
     worst = df.nlargest(10, 'uber_take_rate')[
         ['begintrip_timestamp_local', 'product_type_name', 'trip_distance_miles',
          'duration_min', 'original_fare_usd', 'driver_upfront_fare_usd', 'uber_take_rate']
     ].round(2)
     
-    # Summary stats
     summary = {
         'total_trips': len(df),
         'rider_total': round(df['original_fare_usd'].sum(), 2),
@@ -81,15 +75,12 @@ def analyze_uber_data(df):
     }
 
 def process_zip(zip_path):
-    """Extract and analyze data from Uber privacy export zip"""
     results = {}
     
     with zipfile.ZipFile(zip_path, 'r') as z:
         files = z.namelist()
         
-        # Find driver trips file
         trip_files = [f for f in files if 'driver_lifetime_trips' in f and f.endswith('.csv')]
-        payment_files = [f for f in files if 'driver_payments' in f and f.endswith('.csv')]
         
         if trip_files:
             with z.open(trip_files[0]) as f:
@@ -101,7 +92,6 @@ def process_zip(zip_path):
     return results
 
 def generate_pdf_report(data, driver_name, driver_city, platform='Uber'):
-    """Generate professional PDF case document"""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, 
                            rightMargin=72, leftMargin=72,
@@ -110,23 +100,20 @@ def generate_pdf_report(data, driver_name, driver_city, platform='Uber'):
     styles = getSampleStyleSheet()
     story = []
     
-    # Colors
     dark_blue = HexColor('#1F4E79')
     red = HexColor('#A32D2D')
     light_gray = HexColor('#F5F5F5')
     
-    # Title
     title_style = ParagraphStyle('Title', parent=styles['Title'],
                                   fontSize=28, textColor=dark_blue,
                                   spaceAfter=6, fontName='Helvetica-Bold')
-    story.append(Paragraph(f"PAYAUDIT FARE REPORT", title_style))
+    story.append(Paragraph(f"FAREAUDIT FARE REPORT", title_style))
     
     sub_style = ParagraphStyle('Sub', parent=styles['Normal'],
                                 fontSize=14, textColor=HexColor('#2E75B6'),
                                 spaceAfter=20)
     story.append(Paragraph("Evidence of Systematic Underpayment", sub_style))
     
-    # Info table
     summary = data['summary']
     info_data = [
         ['Driver', driver_name],
@@ -150,7 +137,6 @@ def generate_pdf_report(data, driver_name, driver_city, platform='Uber'):
     story.append(info_table)
     story.append(Spacer(1, 20))
     
-    # Key findings box
     findings_data = [
         ['Riders Paid', 'Driver Received', "Platform's Cut", 'Avg Take Rate', 'Est. Shortfall'],
         [f"${summary['rider_total']:,.2f}", 
@@ -173,12 +159,10 @@ def generate_pdf_report(data, driver_name, driver_city, platform='Uber'):
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('GRID', (0,0), (-1,-1), 0.5, HexColor('#CCCCCC')),
         ('PADDING', (0,0), (-1,-1), 8),
-        ('ROWBACKGROUNDS', (0,1), (-1,1), [HexColor('#FFF2F2')]),
     ]))
     story.append(findings_table)
     story.append(Spacer(1, 20))
     
-    # Section: Key Findings
     h1_style = ParagraphStyle('H1', parent=styles['Heading1'],
                                fontSize=16, textColor=dark_blue,
                                spaceBefore=16, spaceAfter=8,
@@ -202,7 +186,6 @@ def generate_pdf_report(data, driver_name, driver_city, platform='Uber'):
         f"of every dollar the rider paid.",
         body_style))
     
-    # Monthly breakdown table
     story.append(Paragraph("2. Monthly Breakdown", h1_style))
     
     monthly_header = ['Month', 'Trips', 'Rider Total', 'Driver Paid', 'Avg Take %', 'Shortfall']
@@ -218,7 +201,6 @@ def generate_pdf_report(data, driver_name, driver_city, platform='Uber'):
             f"${m['shortfall']:,.2f}",
         ])
     
-    # Totals row
     monthly_rows.append([
         'TOTAL',
         str(summary['total_trips']),
@@ -244,7 +226,6 @@ def generate_pdf_report(data, driver_name, driver_city, platform='Uber'):
     story.append(monthly_table)
     story.append(Spacer(1, 16))
     
-    # Worst trips
     story.append(Paragraph("3. Worst Individual Trips", h1_style))
     story.append(Paragraph(
         "The following trips represent the most significant fare discrepancies identified. "
@@ -281,7 +262,6 @@ def generate_pdf_report(data, driver_name, driver_city, platform='Uber'):
     story.append(worst_table)
     story.append(Spacer(1, 16))
     
-    # Legal context
     story.append(Paragraph("4. Legal Context", h1_style))
     story.append(Paragraph(
         "This audit is supported by documented legal actions including a 2025 settlement "
@@ -291,7 +271,6 @@ def generate_pdf_report(data, driver_name, driver_city, platform='Uber'):
         "its shift to upfront pricing, with individual trips exceeding 50%.",
         body_style))
     
-    # Requested resolution
     story.append(Paragraph("5. Requested Resolution", h1_style))
     resolution_items = [
         f"Full accounting of fare calculation methodology for all {summary['total_trips']} trips in this audit.",
@@ -302,7 +281,6 @@ def generate_pdf_report(data, driver_name, driver_city, platform='Uber'):
     for i, item in enumerate(resolution_items, 1):
         story.append(Paragraph(f"{i}. {item}", body_style))
     
-    # Declaration
     story.append(Spacer(1, 20))
     story.append(Paragraph("6. Declaration", h1_style))
     story.append(Paragraph(
@@ -318,13 +296,12 @@ def generate_pdf_report(data, driver_name, driver_city, platform='Uber'):
     story.append(Paragraph(driver_name, body_style))
     story.append(Paragraph(driver_city, body_style))
     
-    # Footer note
     story.append(Spacer(1, 20))
     footer_style = ParagraphStyle('Footer', parent=styles['Normal'],
                                    fontSize=8, textColor=HexColor('#999999'),
                                    borderTop=0.5, spaceBefore=10)
     story.append(Paragraph(
-        "Generated by PayAudit (fareaudit.app) — This document does not constitute legal advice. "
+        "Generated by FareAudit (fareaudit.app) — This document does not constitute legal advice. "
         "All data sourced from the platform's official privacy export. For legal advice consult a licensed attorney.",
         footer_style))
     
@@ -339,7 +316,7 @@ def index():
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PayAudit — Gig Worker Fare Audit Tool</title>
+<title>FareAudit — Gig Worker Fare Audit Tool</title>
 <meta name="description" content="Find out if Uber, Lyft or DoorDash is underpaying you. Upload your data and get an instant audit with a case-ready report.">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Sora:wght@400;500;600&display=swap" rel="stylesheet">
@@ -361,30 +338,24 @@ def index():
 }}
 body{font-family:'Sora',sans-serif;background:var(--bg3);color:var(--text);min-height:100vh;padding:2rem 1rem}
 .wrap{max-width:680px;margin:0 auto;background:var(--bg);border-radius:var(--radius-lg);padding:2rem;border:0.5px solid var(--border)}
-
 .pa-logo{display:flex;align-items:center;gap:10px;margin-bottom:2rem}
 .pa-logo-mark{width:36px;height:36px;background:var(--text);border-radius:8px;display:flex;align-items:center;justify-content:center}
 .pa-logo-mark i{font-size:20px;color:var(--bg)}
 .pa-logo-name{font-size:20px;font-weight:600;color:var(--text);letter-spacing:-0.5px}
 .pa-logo-name span{color:var(--text2);font-weight:400}
-
 .pa-hero{margin-bottom:2rem}
 .pa-hero h1{font-size:28px;font-weight:600;letter-spacing:-0.5px;line-height:1.2;color:var(--text);margin-bottom:8px}
 .pa-hero p{font-size:15px;color:var(--text2);line-height:1.6}
-
 .pa-tabs{display:flex;gap:8px;border-bottom:0.5px solid var(--border);margin-bottom:1.5rem}
 .pa-tab{padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border:none;background:none;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-0.5px;font-family:'Sora',sans-serif}
 .pa-tab.active{color:var(--text);border-bottom:2px solid var(--text)}
-
 .pa-panel{display:none}.pa-panel.active{display:block}
-
 .pa-upload-box{border:1.5px dashed var(--border2);border-radius:var(--radius-lg);padding:2.5rem;text-align:center;cursor:pointer;transition:all 0.15s;margin-bottom:1rem;position:relative;background:var(--bg)}
 .pa-upload-box:hover,.pa-upload-box.drag{border-color:var(--text);background:var(--bg2)}
 .pa-upload-box i{font-size:32px;color:var(--text2);margin-bottom:12px;display:block}
 .pa-upload-box h3{font-size:15px;font-weight:500;color:var(--text);margin-bottom:4px}
 .pa-upload-box p{font-size:13px;color:var(--text2)}
 .pa-upload-box input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
-
 .pa-platform-select{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:1rem}
 .pa-platform{border:0.5px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center;cursor:pointer;transition:all 0.15s;background:var(--bg)}
 .pa-platform:hover{border-color:var(--border2);background:var(--bg2)}
@@ -393,34 +364,28 @@ body{font-family:'Sora',sans-serif;background:var(--bg3);color:var(--text);min-h
 .pa-platform.selected i{color:var(--text)}
 .pa-platform span{font-size:12px;font-weight:500;color:var(--text2)}
 .pa-platform.selected span{color:var(--text)}
-
 .form-row{margin-bottom:1rem}
 .form-row label{display:block;font-size:11px;font-weight:500;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px}
 .form-row input,.form-row select{width:100%;padding:10px 12px;font-size:14px;font-family:'Sora',sans-serif;border-radius:var(--radius);border:0.5px solid var(--border2);background:var(--bg);color:var(--text);outline:none;transition:border-color 0.15s}
 .form-row input:focus{border-color:var(--text)}
-
 .btn{width:100%;padding:14px;font-size:15px;font-weight:500;font-family:'Sora',sans-serif;border-radius:var(--radius);border:none;cursor:pointer;transition:opacity 0.15s,transform 0.1s;display:flex;align-items:center;justify-content:center;gap:8px}
 .btn:active{transform:scale(0.98)}
 .btn-primary{background:var(--text);color:var(--bg)}
 .btn-primary:hover{opacity:0.85}
 .btn-secondary{background:var(--bg2);color:var(--text);border:0.5px solid var(--border2);margin-top:8px}
 .btn-secondary:hover{background:var(--bg3)}
-
 .progress{display:none;margin-top:1.5rem}
 .progress.show{display:block}
 .progress-bar-wrap{height:4px;background:var(--bg2);border-radius:2px;overflow:hidden;margin-bottom:8px}
 .progress-bar{height:100%;background:var(--text);width:0%;transition:width 0.4s ease;border-radius:2px}
 .progress-label{font-size:12px;color:var(--text2);font-family:'DM Mono',monospace}
-
 .results{display:none}.results.show{display:block}
-
 .stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:1.5rem}
 .stat{background:var(--bg2);border-radius:var(--radius);padding:1rem}
 .stat-label{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px}
 .stat-value{font-size:22px;font-weight:600;color:var(--text);font-family:'DM Mono',monospace}
 .stat-value.danger{color:var(--danger)}
 .stat-sub{font-size:11px;color:var(--text2);margin-top:2px}
-
 .alert{border-radius:var(--radius);padding:12px 14px;margin-bottom:1rem;display:flex;gap:10px;align-items:flex-start}
 .alert i{font-size:16px;flex-shrink:0;margin-top:1px}
 .alert-text{font-size:13px;line-height:1.5}
@@ -434,30 +399,23 @@ body{font-family:'Sora',sans-serif;background:var(--bg3);color:var(--text);min-h
 .alert.success{background:var(--success-bg);border:0.5px solid var(--success-border)}
 .alert.success i,.alert.success .alert-text strong{color:var(--success)}
 .alert.success .alert-text{color:#27500A}
-
 .section-title{font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;margin-top:1.5rem}
-
 table.trips{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:1.5rem}
 table.trips th{text-align:left;padding:8px 10px;background:var(--bg2);color:var(--text2);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:0.3px;border-bottom:0.5px solid var(--border)}
 table.trips td{padding:8px 10px;border-bottom:0.5px solid var(--border);color:var(--text);font-family:'DM Mono',monospace;font-size:12px}
 table.trips tr:last-child td{border-bottom:none}
 table.trips td.danger{color:var(--danger);font-weight:500}
-
 .law-card{border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:1rem 1.25rem;margin-bottom:1rem;background:var(--bg)}
 .law-card.featured{border-color:var(--text);border-width:1.5px}
 .law-card h3{font-size:14px;font-weight:500;color:var(--text);margin-bottom:4px}
 .law-card p{font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:10px}
 .law-card .badge{display:inline-block;font-size:11px;font-weight:500;padding:3px 10px;border-radius:100px;background:var(--text);color:var(--bg);margin-bottom:8px}
-
 .file-pill{display:inline-flex;align-items:center;gap:6px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:100px;padding:6px 12px;font-size:12px;color:var(--text2);margin-top:8px}
-
 .disclaimer{font-size:11px;color:var(--text3);line-height:1.6;margin-top:1.5rem;padding-top:1rem;border-top:0.5px solid var(--border)}
-
 .nav-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:2.5rem;padding-bottom:1.5rem;border-bottom:0.5px solid var(--border)}
 .nav-links{display:flex;gap:1.5rem}
 .nav-links a{font-size:13px;color:var(--text2);text-decoration:none}
 .nav-links a:hover{color:var(--text)}
-
 .hero-badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .badge-pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);background:var(--bg2);border:0.5px solid var(--border);border-radius:100px;padding:4px 10px}
 .badge-pill i{font-size:13px}
@@ -469,12 +427,12 @@ table.trips td.danger{color:var(--danger);font-weight:500}
   <div class="nav-bar">
     <div class="pa-logo">
       <div class="pa-logo-mark"><i class="ti ti-chart-bar" aria-hidden="true"></i></div>
-      <div class="pa-logo-name">Pay<span>Audit</span></div>
+      <div class="pa-logo-name">Fare<span>Audit</span></div>
     </div>
     <div class="nav-links">
       <a href="#how">How it works</a>
       <a href="#lawfirms">Law firms</a>
-      <a href="mailto:hello@payaudit.app">Contact</a>
+      <a href="mailto:hello@fareaudit.app">Contact</a>
     </div>
   </div>
 
@@ -649,10 +607,10 @@ table.trips td.danger{color:var(--danger);font-weight:500}
 
     <div class="law-card">
       <h3>Revenue share — free to use</h3>
-      <p>No upfront cost. 2% of any settlement on cases built using PayAudit reports. Best for firms building class action cases. Contact us to discuss.</p>
+      <p>No upfront cost. 2% of any settlement on cases built using FareAudit reports. Best for firms building class action cases. Contact us to discuss.</p>
     </div>
 
-    <button class="btn btn-primary" style="margin-top:0.5rem" onclick="window.location.href='mailto:hello@payaudit.app?subject=Law firm inquiry'">
+    <button class="btn btn-primary" style="margin-top:0.5rem" onclick="window.location.href='mailto:hello@fareaudit.app?subject=Law firm inquiry'">
       <i class="ti ti-mail" aria-hidden="true"></i> Contact us to get started
     </button>
   </div>
@@ -678,7 +636,7 @@ table.trips td.danger{color:var(--danger);font-weight:500}
     </div>
   </div>
 
-  <p class="disclaimer">PayAudit (payaudit.app) analyzes data you provide and identifies statistical patterns in fare calculations. This tool does not provide legal advice. Results are based on your platform's own data export and compared against publicly available rate cards. All uploaded data is processed securely and is never stored or shared with third parties. For legal advice consult a licensed attorney. &copy; 2026 PayAudit.</p>
+  <p class="disclaimer">FareAudit (fareaudit.app) analyzes data you provide and identifies statistical patterns in fare calculations. This tool does not provide legal advice. Results are based on your platform's own data export and compared against publicly available rate cards. All uploaded data is processed securely and is never stored or shared with third parties. For legal advice consult a licensed attorney. &copy; 2026 FareAudit.</p>
 
 </div>
 
@@ -746,7 +704,7 @@ function runAudit(){
 }
 
 function downloadReport(){
-  alert('Full report download coming soon! For now email hello@payaudit.app with your name and city to receive your report directly.');
+  alert('Full report download coming soon! For now email hello@fareaudit.app with your name and city to receive your report directly.');
 }
 
 const box=document.getElementById('upload-box');
@@ -760,11 +718,10 @@ box.addEventListener('drop',e=>{
 </script>
 </body>
 </html>
-""" 
+"""
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    """Main analysis endpoint"""
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file uploaded'}), 400
@@ -780,19 +737,16 @@ def analyze():
         if not allowed_file(file.filename):
             return jsonify({'error': 'Please upload a .zip or .csv file'}), 400
         
-        # Save to temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as tmp:
             file.save(tmp.name)
             tmp_path = tmp.name
         
-        # Process the file
         results = process_zip(tmp_path)
-        os.unlink(tmp_path)  # Delete temp file immediately
+        os.unlink(tmp_path)
         
         if not results:
             return jsonify({'error': 'Could not find driver trip data in this file. Make sure you uploaded the correct Uber privacy export.'}), 400
         
-        # Get the data
         data = results.get('uber', list(results.values())[0])
         
         return jsonify({
@@ -810,7 +764,6 @@ def analyze():
 
 @app.route('/report', methods=['POST'])
 def generate_report():
-    """Generate and return PDF report"""
     try:
         data = request.json
         driver_name = data.get('driver_name', 'Driver')
@@ -823,7 +776,7 @@ def generate_report():
             pdf_buffer,
             mimetype='application/pdf',
             as_attachment=True,
-            download_name=f'PayAudit_{driver_name.replace(" ","_")}_{datetime.now().strftime("%Y%m%d")}.pdf'
+            download_name=f'FareAudit_{driver_name.replace(" ","_")}_{datetime.now().strftime("%Y%m%d")}.pdf'
         )
         
     except Exception as e:
@@ -831,7 +784,7 @@ def generate_report():
 
 @app.route('/health')
 def health():
-    return jsonify({'status': 'ok', 'service': 'PayAudit'})
+    return jsonify({'status': 'ok', 'service': 'FareAudit'})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
