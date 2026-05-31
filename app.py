@@ -1,4 +1,5 @@
 import os
+import uuid
 import zipfile
 import pandas as pd
 import numpy as np
@@ -24,6 +25,47 @@ STRIPE_PUBLISHABLE_KEY = os.environ.get('STRIPE_PUBLISHABLE_KEY')
 
 REPORT_PRICE_ID = 'price_1TdHF2QMZpqAVJpSGb3IvPzm'
 LAWFIRM_PRICE_ID = 'price_1TdHJLQMZpqAVJpSFoZIHDJY'
+
+# Directory for temporarily storing uploaded files between upload and payment
+UPLOAD_STORE_DIR = os.path.join(tempfile.gettempdir(), 'fareaudit_uploads')
+os.makedirs(UPLOAD_STORE_DIR, exist_ok=True)
+
+# ---------------------------------------------------------------------------
+# Demo / teaser data shown to all users before payment
+# ---------------------------------------------------------------------------
+DEMO_SUMMARY = {
+    'total_trips': 847,
+    'rider_total': 18432.50,
+    'driver_paid': 10843.20,
+    'uber_kept': 7589.30,
+    'avg_take_rate': 41.2,
+    'trips_over_50pct': 203,
+    'trips_over_40pct': 389,
+    'total_shortfall': 3011.45,
+    'worst_take_rate': 78.4,
+    'date_start': 'Jan 01, 2024',
+    'date_end': 'May 31, 2024',
+    'city': 'Your Market',
+}
+
+DEMO_MONTHLY = [
+    {'month': '2024-01', 'trips': 162, 'rider_total': 3521.40, 'driver_paid': 2089.60, 'avg_take': 40.7, 'shortfall': 545.75},
+    {'month': '2024-02', 'trips': 148, 'rider_total': 3204.80, 'driver_paid': 1882.10, 'avg_take': 41.3, 'shortfall': 519.10},
+    {'month': '2024-03', 'trips': 179, 'rider_total': 3897.20, 'driver_paid': 2268.50, 'avg_take': 41.8, 'shortfall': 654.90},
+    {'month': '2024-04', 'trips': 171, 'rider_total': 3712.60, 'driver_paid': 2193.40, 'avg_take': 40.9, 'shortfall': 585.15},
+    {'month': '2024-05', 'trips': 187, 'rider_total': 4096.50, 'driver_paid': 2409.60, 'avg_take': 41.2, 'shortfall': 706.55},
+]
+
+DEMO_WORST_TRIPS = [
+    {'begintrip_timestamp_local': '2024-03-14 21:42', 'product_type_name': 'UberX', 'trip_distance_miles': 4.2, 'duration_min': 18.5, 'original_fare_usd': 24.80, 'driver_upfront_fare_usd': 5.35, 'uber_take_rate': 78.4},
+    {'begintrip_timestamp_local': '2024-01-28 23:11', 'product_type_name': 'UberX', 'trip_distance_miles': 3.8, 'duration_min': 14.2, 'original_fare_usd': 19.60, 'driver_upfront_fare_usd': 4.70, 'uber_take_rate': 76.0},
+    {'begintrip_timestamp_local': '2024-05-03 18:55', 'product_type_name': 'Comfort', 'trip_distance_miles': 6.1, 'duration_min': 22.0, 'original_fare_usd': 31.40, 'driver_upfront_fare_usd': 8.20, 'uber_take_rate': 73.9},
+    {'begintrip_timestamp_local': '2024-02-17 20:30', 'product_type_name': 'UberX', 'trip_distance_miles': 2.9, 'duration_min': 11.8, 'original_fare_usd': 16.90, 'driver_upfront_fare_usd': 4.60, 'uber_take_rate': 72.8},
+    {'begintrip_timestamp_local': '2024-04-22 22:05', 'product_type_name': 'UberX', 'trip_distance_miles': 5.3, 'duration_min': 19.7, 'original_fare_usd': 27.20, 'driver_upfront_fare_usd': 7.60, 'uber_take_rate': 72.1},
+    {'begintrip_timestamp_local': '2024-03-08 17:44', 'product_type_name': 'UberXL', 'trip_distance_miles': 7.4, 'duration_min': 26.3, 'original_fare_usd': 38.50, 'driver_upfront_fare_usd': 11.20, 'uber_take_rate': 70.9},
+    {'begintrip_timestamp_local': '2024-05-19 21:18', 'product_type_name': 'UberX', 'trip_distance_miles': 3.5, 'duration_min': 13.5, 'original_fare_usd': 18.30, 'driver_upfront_fare_usd': 5.50, 'uber_take_rate': 69.9},
+    {'begintrip_timestamp_local': '2024-01-11 19:02', 'product_type_name': 'Comfort', 'trip_distance_miles': 5.8, 'duration_min': 20.9, 'original_fare_usd': 29.70, 'driver_upfront_fare_usd': 9.10, 'uber_take_rate': 69.4},
+]
 
 ALLOWED_EXTENSIONS = {'zip', 'csv'}
 
@@ -335,9 +377,13 @@ table.trips td.danger{color:var(--danger);font-weight:500}
 .hero-badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .badge-pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);background:var(--bg2);border:0.5px solid var(--border);border-radius:100px;padding:4px 10px}
 .badge-pill i{font-size:13px}
-.blurred{filter:blur(4px);user-select:none;pointer-events:none}
-.paywall-overlay{position:relative;margin-bottom:1rem}
-.paywall-overlay .blur-msg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--bg);border:1px solid var(--border2);border-radius:var(--radius);padding:12px 20px;font-size:13px;font-weight:500;color:var(--text);text-align:center;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.15)}
+.demo-banner{background:linear-gradient(135deg,#1F4E79 0%,#2E75B6 100%);border-radius:var(--radius-lg);padding:1.25rem 1.5rem;margin-bottom:1.25rem;display:flex;gap:12px;align-items:flex-start;color:#fff}
+.demo-banner i{font-size:20px;flex-shrink:0;margin-top:1px;opacity:0.9}
+.demo-banner-text{flex:1}
+.demo-banner-text strong{display:block;font-size:14px;font-weight:600;margin-bottom:4px}
+.demo-banner-text span{font-size:13px;opacity:0.85;line-height:1.5}
+.demo-tag{display:inline-block;font-size:10px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;background:rgba(255,255,255,0.2);border-radius:4px;padding:2px 7px;margin-left:8px;vertical-align:middle}
+.price-note{font-size:12px;color:var(--text2);text-align:center;margin-top:8px}
 </style>
 </head>
 <body>
@@ -397,14 +443,14 @@ table.trips td.danger{color:var(--danger);font-weight:500}
       <input type="file" id="file-input" accept=".zip,.csv" onchange="handleFile(this)">
       <i class="ti ti-upload"></i>
       <h3>Drop your data zip here</h3>
-      <p>Get yours at myprivacy.uber.com · drivers.lyft.com · identity.doordash.com/privacy</p>
+      <p>Get yours at myprivacy.uber.com &middot; drivers.lyft.com &middot; identity.doordash.com/privacy</p>
     </div>
     <div id="file-pill-wrap" style="display:none">
       <div class="file-pill"><i class="ti ti-file-zip"></i><span id="file-name-display"></span></div>
     </div>
 
     <button class="btn btn-primary" style="margin-top:1rem" onclick="runAudit()">
-      <i class="ti ti-search"></i> Run my audit — free
+      <i class="ti ti-search"></i> Run my audit &mdash; free
     </button>
 
     <div class="progress" id="progress">
@@ -413,43 +459,50 @@ table.trips td.danger{color:var(--danger);font-weight:500}
     </div>
 
     <div class="results" id="results">
+      <div class="demo-banner" id="demo-banner">
+        <i class="ti ti-eye"></i>
+        <div class="demo-banner-text">
+          <strong>Sample preview <span class="demo-tag">Demo</span></strong>
+          <span>These are illustrative results based on typical driver data. Your actual numbers are locked inside the full report &mdash; purchase below to process your real file and download the case-ready PDF.</span>
+        </div>
+      </div>
       <p class="section-title" style="margin-top:1.5rem">Your audit results</p>
       <div class="stat-grid">
         <div class="stat">
           <div class="stat-label">Riders paid platform</div>
-          <div class="stat-value" id="r-total">$11,565</div>
-          <div class="stat-sub" id="r-period">Jan–May 2026</div>
+          <div class="stat-value" id="r-total">&mdash;</div>
+          <div class="stat-sub" id="r-period">&mdash;</div>
         </div>
         <div class="stat">
           <div class="stat-label">You received</div>
-          <div class="stat-value" id="r-paid">$5,884</div>
-          <div class="stat-sub" id="r-trips">611 trips analyzed</div>
+          <div class="stat-value" id="r-paid">&mdash;</div>
+          <div class="stat-sub" id="r-trips">&mdash;</div>
         </div>
         <div class="stat">
           <div class="stat-label">Platform's average cut</div>
-          <div class="stat-value danger" id="r-rate">44.4%</div>
+          <div class="stat-value danger" id="r-rate">&mdash;</div>
           <div class="stat-sub">Standard rate is ~25%</div>
         </div>
         <div class="stat">
           <div class="stat-label">Estimated shortfall</div>
-          <div class="stat-value danger" id="r-short">$3,011</div>
+          <div class="stat-value danger" id="r-short">&mdash;</div>
           <div class="stat-sub">vs 25% commission</div>
         </div>
       </div>
 
-      <div class="alert danger">
+      <div class="alert danger" id="alert-underpayment" style="display:none">
         <i class="ti ti-alert-triangle"></i>
         <div class="alert-text">
           <strong>Significant underpayment detected</strong>
-          The platform took more than 50% of rider fares on 318 of your 611 trips. The worst single trip: 81.3% of what the rider paid went to Uber.
+          <span id="alert-underpayment-text"></span>
         </div>
       </div>
 
-      <div class="alert warning">
+      <div class="alert warning" id="alert-worst-month" style="display:none">
         <i class="ti ti-clock"></i>
         <div class="alert-text">
-          <strong>March 2026 was your worst month</strong>
-          Average take rate of 51.1% — the platform kept more than you earned on the majority of trips that month.
+          <strong id="alert-worst-month-title"></strong>
+          <span id="alert-worst-month-text"></span>
         </div>
       </div>
 
@@ -457,37 +510,24 @@ table.trips td.danger{color:var(--danger);font-weight:500}
       <div style="overflow-x:auto">
         <table class="trips">
           <thead><tr><th>Date</th><th>Type</th><th>Miles</th><th>Rider paid</th><th>You got</th><th>Platform took</th></tr></thead>
-          <tbody>
-            <tr><td>Mar 6</td><td>uberX</td><td>3.52</td><td>$27.94</td><td>$5.22</td><td class="danger">81.3%</td></tr>
-            <tr><td>Apr 19</td><td>Comfort</td><td>8.00</td><td>$48.99</td><td>$12.23</td><td class="danger">75.0%</td></tr>
-            <tr><td>Jan 16</td><td>UberX Saver</td><td>8.93</td><td>$21.06</td><td>$5.33</td><td class="danger">74.7%</td></tr>
+          <tbody id="worst-trips-body">
+            <tr><td colspan="6" style="text-align:center;color:var(--text2)">Run your audit to see results</td></tr>
           </tbody>
         </table>
-      </div>
-
-      <div class="paywall-overlay">
-        <table class="trips blurred">
-          <tbody>
-            <tr><td>Jan 19</td><td>uberX</td><td>1.85</td><td>$16.16</td><td>$4.24</td><td class="danger">73.8%</td></tr>
-            <tr><td>Feb 27</td><td>uberX</td><td>10.07</td><td>$59.93</td><td>$15.99</td><td class="danger">73.3%</td></tr>
-            <tr><td>Jan 19</td><td>uberX</td><td>12.02</td><td>$28.42</td><td>$7.71</td><td class="danger">72.9%</td></tr>
-            <tr><td>Apr 17</td><td>Comfort</td><td>0.07</td><td>$26.07</td><td>$7.39</td><td class="danger">71.7%</td></tr>
-          </tbody>
-        </table>
-        <div class="blur-msg">🔒 Unlock full report — $49</div>
       </div>
 
       <div class="alert success">
         <i class="ti ti-file-text"></i>
         <div class="alert-text">
-          <strong>Full case document ready</strong>
-          Your complete audit with all trips, monthly breakdowns, legal context, and formal complaint language. Ready to send to a lawyer or file with the FTC.
+          <strong>Your real report is ready to generate</strong>
+          We have your data file. Pay once and we'll process your actual trips instantly &mdash; full case PDF with every trip, monthly breakdowns, legal context, and formal complaint language ready to send to a lawyer or file with the FTC.
         </div>
       </div>
 
-      <button class="btn btn-primary" onclick="buyReport()">
-        <i class="ti ti-download"></i> Download full case report — $49
+      <button class="btn btn-primary" id="buy-btn" onclick="buyReport()">
+        <i class="ti ti-download"></i> Get full case report &mdash; $49
       </button>
+      <p class="price-note">Secure payment via Stripe &middot; PDF downloads instantly after payment</p>
       <button class="btn btn-secondary" onclick="window.open('https://reportfraud.ftc.gov','_blank')">
         <i class="ti ti-send"></i> File FTC complaint (free)
       </button>
@@ -511,11 +551,11 @@ table.trips td.danger{color:var(--danger);font-weight:500}
       <h3>$1,499 / month</h3>
       <p>Unlimited driver audits for the duration of your active monthly subscription. White-label PDF reports, priority processing. Renews automatically. Cancel anytime.</p>
       <button class="btn btn-primary" onclick="buyLawFirm()">
-        <i class="ti ti-building"></i> Subscribe — $1,499/month
+        <i class="ti ti-building"></i> Subscribe &mdash; $1,499/month
       </button>
     </div>
     <div class="law-card">
-      <h3>Revenue share — free to use</h3>
+      <h3>Revenue share &mdash; free to use</h3>
       <p>No upfront cost. 2% of any settlement on cases built using FareAudit reports.</p>
       <button class="btn btn-secondary" onclick="window.location.href='mailto:hello@fareaudit.app?subject=Law firm inquiry'">
         <i class="ti ti-mail"></i> Contact us
@@ -551,6 +591,7 @@ table.trips td.danger{color:var(--danger);font-weight:500}
 let selectedPlatform = 'uber';
 let driverName = '';
 let driverCity = '';
+let fileToken = null;  // UUID token for the stored upload, set after /analyze
 
 function switchTab(tab) {
   document.querySelectorAll('.pa-tab').forEach((t,i) => {
@@ -574,6 +615,48 @@ function handleFile(input) {
   }
 }
 
+function fmt(n) {
+  return '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+function populateResults(data) {
+  const s = data.summary;
+  document.getElementById('r-total').textContent = fmt(s.rider_total);
+  document.getElementById('r-period').textContent = s.date_start + ' \u2013 ' + s.date_end;
+  document.getElementById('r-paid').textContent = fmt(s.driver_paid);
+  document.getElementById('r-trips').textContent = s.total_trips + ' trips analyzed';
+  document.getElementById('r-rate').textContent = s.avg_take_rate + '%';
+  document.getElementById('r-short').textContent = fmt(s.total_shortfall);
+
+  if (s.trips_over_50pct > 0) {
+    document.getElementById('alert-underpayment-text').textContent =
+      'The platform took more than 50% of rider fares on ' + s.trips_over_50pct + ' of your ' + s.total_trips + ' trips. The worst single trip: ' + s.worst_take_rate + '% of what the rider paid went to the platform.';
+    document.getElementById('alert-underpayment').style.display = 'flex';
+  }
+
+  if (data.monthly && data.monthly.length > 0) {
+    const worst = data.monthly.reduce((a, b) => a.avg_take > b.avg_take ? a : b);
+    document.getElementById('alert-worst-month-title').textContent = worst.month + ' was your worst month';
+    document.getElementById('alert-worst-month-text').textContent =
+      'Average take rate of ' + Number(worst.avg_take).toFixed(1) + '% \u2014 the platform kept more than you earned on the majority of trips that month.';
+    document.getElementById('alert-worst-month').style.display = 'flex';
+  }
+
+  const tbody = document.getElementById('worst-trips-body');
+  tbody.innerHTML = '';
+  (data.worst_trips || []).slice(0, 8).forEach(t => {
+    const date = String(t.begintrip_timestamp_local || '').slice(0, 10);
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + date + '</td>' +
+      '<td>' + String(t.product_type_name || 'N/A').slice(0, 12) + '</td>' +
+      '<td>' + Number(t.trip_distance_miles || 0).toFixed(1) + '</td>' +
+      '<td>' + fmt(t.original_fare_usd || 0) + '</td>' +
+      '<td>' + fmt(t.driver_upfront_fare_usd || 0) + '</td>' +
+      '<td class="danger">' + Number(t.uber_take_rate || 0).toFixed(1) + '%</td>';
+    tbody.appendChild(tr);
+  });
+}
+
 function runAudit() {
   driverName = document.getElementById('driver-name').value.trim();
   driverCity = document.getElementById('driver-city').value.trim();
@@ -586,35 +669,70 @@ function runAudit() {
   const label = document.getElementById('progress-label');
   prog.classList.add('show');
   document.getElementById('results').classList.remove('show');
+  fileToken = null;
 
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  formData.append('name', driverName);
+  formData.append('city', driverCity);
+  formData.append('platform', selectedPlatform);
+
+  // Animated progress steps run concurrently with the upload
   const steps = [
-    [15,'Reading your data file...'],
-    [30,'Extracting trip records...'],
-    [50,'Calculating fare discrepancies...'],
-    [65,'Comparing against rate card...'],
-    [80,'Identifying worst trips...'],
-    [92,'Building your case document...'],
-    [100,'Audit complete.'],
+    [15, 'Reading your data file...'],
+    [35, 'Extracting trip records...'],
+    [55, 'Calculating fare discrepancies...'],
+    [75, 'Comparing against rate card...'],
+    [90, 'Identifying worst trips...'],
+    [97, 'Building your case preview...'],
   ];
-  let i = 0;
-  const run = () => {
-    if (i >= steps.length) {
-      setTimeout(() => {
-        prog.classList.remove('show');
-        document.getElementById('results').classList.add('show');
-        document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
-      }, 500);
-      return;
+  let si = 0;
+  let animDone = false;
+  let fetchDone = false;
+  let fetchResult = null;
+
+  function tryReveal() {
+    if (!animDone || !fetchDone) return;
+    bar.style.width = '100%';
+    label.textContent = 'Audit complete.';
+    setTimeout(() => {
+      prog.classList.remove('show');
+      if (fetchResult && fetchResult.error) { alert('Error: ' + fetchResult.error); return; }
+      fileToken = fetchResult ? (fetchResult.file_token || null) : null;
+      populateResults(fetchResult);
+      const banner = document.getElementById('demo-banner');
+      if (banner) banner.style.display = (fetchResult && fetchResult.demo) ? 'flex' : 'none';
+      document.getElementById('results').classList.add('show');
+      document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
+    }, 400);
+  }
+
+  const animSteps = () => {
+    if (si < steps.length) {
+      bar.style.width = steps[si][0] + '%';
+      label.textContent = steps[si][1];
+      si++;
+      setTimeout(animSteps, 620);
+    } else {
+      animDone = true;
+      tryReveal();
     }
-    bar.style.width = steps[i][0] + '%';
-    label.textContent = steps[i][1];
-    i++;
-    setTimeout(run, 700);
   };
-  run();
+  animSteps();
+
+  fetch('/analyze', {method:'POST', body:formData})
+    .then(r => r.json())
+    .then(data => { fetchResult = data; fetchDone = true; tryReveal(); })
+    .catch(err => { prog.classList.remove('show'); alert('Analysis failed. Please try again.'); console.error(err); });
 }
 
 async function buyReport() {
+  if (!fileToken) {
+    alert('Please run your audit first by uploading your data file and clicking "Run my audit".');
+    return;
+  }
+  const btn = document.getElementById('buy-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Starting checkout\u2026'; }
   try {
     const res = await fetch('/create-checkout', {
       method: 'POST',
@@ -623,13 +741,18 @@ async function buyReport() {
         type: 'report',
         name: driverName || 'Driver',
         city: driverCity || 'Unknown',
-        platform: selectedPlatform
+        platform: selectedPlatform,
+        file_token: fileToken
       })
     });
     const data = await res.json();
     if (data.url) window.location.href = data.url;
-    else alert('Payment setup error. Please try again.');
+    else {
+      if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-download"></i> Get full case report \u2014 $49'; }
+      alert('Payment setup error. Please try again.');
+    }
   } catch(e) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-download"></i> Get full case report \u2014 $49'; }
     alert('Something went wrong. Please try again.');
   }
 }
@@ -659,12 +782,61 @@ box.addEventListener('drop', e => {
     document.getElementById('file-name-display').textContent = f.name;
     document.getElementById('file-pill-wrap').style.display = 'block';
     box.style.borderStyle = 'solid';
+    const dt = new DataTransfer();
+    dt.items.add(f);
+    document.getElementById('file-input').files = dt.files;
   }
 });
 </script>
 </body>
 </html>
 """
+
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    """Accept the uploaded file and return demo teaser results.
+
+    Saves the file to UPLOAD_STORE_DIR under a UUID token and returns
+    hardcoded demo/teaser results. The file_token is passed through Stripe
+    checkout metadata so the real file can be processed after payment on /success.
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file uploaded'}), 400
+
+        file = request.files['file']
+        driver_name = request.form.get('name', 'Driver')
+        driver_city = request.form.get('city', 'Unknown')
+        platform = request.form.get('platform', 'Uber')
+
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+
+        if not allowed_file(file.filename):
+            return jsonify({'error': 'Please upload a .zip or .csv file'}), 400
+
+        # Persist the file so we can process it after payment
+        file_token = str(uuid.uuid4())
+        ext = os.path.splitext(secure_filename(file.filename))[1] or '.zip'
+        stored_path = os.path.join(UPLOAD_STORE_DIR, file_token + ext)
+        file.save(stored_path)
+
+        # Return demo/teaser results — real data is never shown before payment
+        return jsonify({
+            'success': True,
+            'demo': True,
+            'file_token': file_token,
+            'summary': DEMO_SUMMARY,
+            'monthly': DEMO_MONTHLY,
+            'worst_trips': DEMO_WORST_TRIPS,
+            'driver_name': driver_name,
+            'driver_city': driver_city,
+            'platform': platform,
+        })
+
+    except Exception as e:
+        return jsonify({'error': f'Analysis failed: {str(e)}'}), 500
+
 
 @app.route('/create-checkout', methods=['POST'])
 def create_checkout():
@@ -674,12 +846,20 @@ def create_checkout():
         base_url = 'https://fareaudit.app'
 
         if checkout_type == 'report':
+            file_token = data.get('file_token', '')
             session = stripe.checkout.Session.create(
                 payment_method_types=['card'],
                 line_items=[{'price': REPORT_PRICE_ID, 'quantity': 1}],
                 mode='payment',
-                success_url=base_url + '/success?session_id={CHECKOUT_SESSION_ID}&name=' + data.get('name','Driver').replace(' ','+') + '&city=' + data.get('city','Unknown').replace(' ','+') + '&platform=' + data.get('platform','Uber'),
+                success_url=base_url + '/success?session_id={CHECKOUT_SESSION_ID}',
                 cancel_url=base_url + '/',
+                metadata={
+                    'type': 'report',
+                    'driver_name': data.get('name', 'Driver'),
+                    'driver_city': data.get('city', 'Unknown'),
+                    'platform': data.get('platform', 'Uber'),
+                    'file_token': file_token,
+                },
             )
         elif checkout_type == 'lawfirm':
             session = stripe.checkout.Session.create(
@@ -688,6 +868,7 @@ def create_checkout():
                 mode='subscription',
                 success_url=base_url + '/success?session_id={CHECKOUT_SESSION_ID}',
                 cancel_url=base_url + '/',
+                metadata={'type': 'lawfirm'},
             )
         else:
             return jsonify({'error': 'Invalid type'}), 400
@@ -696,56 +877,99 @@ def create_checkout():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/success')
 def success():
-    session_id = request.args.get('session_id')
-    driver_name = request.args.get('name', 'Driver').replace('+', ' ')
-    driver_city = request.args.get('city', 'Unknown').replace('+', ' ')
-    platform = request.args.get('platform', 'Uber')
+    """Post-payment success page.
 
-    try:
-        session = stripe.checkout.Session.retrieve(session_id)
-        if session.payment_status == 'paid' or session.status == 'complete':
-            # Generate a real PDF with placeholder data since we don't store the file
-            demo_data = {
-                'summary': {
-                    'total_trips': 611, 'rider_total': 11565.91, 'driver_paid': 5883.94,
-                    'uber_kept': 5681.97, 'avg_take_rate': 44.4, 'trips_over_50pct': 318,
-                    'trips_over_40pct': 449, 'total_shortfall': 3011.72, 'worst_take_rate': 81.3,
-                    'date_start': 'Jan 01, 2026', 'date_end': 'May 23, 2026', 'city': driver_city
-                },
-                'monthly': [
-                    {'month': '2026-01', 'trips': 173, 'rider_total': 2813.51, 'driver_paid': 1384.78, 'avg_take': 46.8, 'shortfall': 750.75},
-                    {'month': '2026-02', 'trips': 106, 'rider_total': 1843.45, 'driver_paid': 891.29, 'avg_take': 49.2, 'shortfall': 502.74},
-                    {'month': '2026-03', 'trips': 129, 'rider_total': 2697.85, 'driver_paid': 1236.46, 'avg_take': 51.1, 'shortfall': 798.34},
-                    {'month': '2026-04', 'trips': 88, 'rider_total': 2169.44, 'driver_paid': 1085.82, 'avg_take': 43.3, 'shortfall': 592.75},
-                    {'month': '2026-05', 'trips': 115, 'rider_total': 2041.66, 'driver_paid': 1285.59, 'avg_take': 29.5, 'shortfall': 367.14},
-                ],
-                'worst_trips': [
-                    {'begintrip_timestamp_local': '2026-03-06', 'product_type_name': 'uberX', 'trip_distance_miles': 3.52, 'duration_min': 17.7, 'original_fare_usd': 27.94, 'driver_upfront_fare_usd': 5.22, 'uber_take_rate': 81.3},
-                    {'begintrip_timestamp_local': '2026-04-19', 'product_type_name': 'Comfort', 'trip_distance_miles': 8.00, 'duration_min': 13.4, 'original_fare_usd': 48.99, 'driver_upfront_fare_usd': 12.23, 'uber_take_rate': 75.0},
-                    {'begintrip_timestamp_local': '2026-01-16', 'product_type_name': 'UberX Saver', 'trip_distance_miles': 8.93, 'duration_min': 11.8, 'original_fare_usd': 21.06, 'driver_upfront_fare_usd': 5.33, 'uber_take_rate': 74.7},
-                    {'begintrip_timestamp_local': '2026-01-19', 'product_type_name': 'uberX', 'trip_distance_miles': 1.85, 'duration_min': 5.8, 'original_fare_usd': 16.16, 'driver_upfront_fare_usd': 4.24, 'uber_take_rate': 73.8},
-                    {'begintrip_timestamp_local': '2026-02-27', 'product_type_name': 'uberX', 'trip_distance_miles': 10.07, 'duration_min': 25.5, 'original_fare_usd': 59.93, 'driver_upfront_fare_usd': 15.99, 'uber_take_rate': 73.3},
-                ]
-            }
-            pdf = generate_pdf_report(demo_data, driver_name, driver_city, platform)
-            return send_file(pdf, mimetype='application/pdf', as_attachment=True,
-                           download_name=f'FareAudit_{driver_name.replace(" ","_")}.pdf')
-    except Exception as e:
-        pass
+    Retrieves the Stripe session to get the file_token from metadata, then
+    processes the stored file with analyze_uber_data() and streams the real PDF.
+    Falls back to a confirmation page if the file can no longer be found.
+    """
+    session_id = request.args.get('session_id', '')
 
-    return """<!DOCTYPE html><html><head><title>FareAudit — Thank You</title>
+    driver_name = 'Driver'
+    driver_city = 'Unknown'
+    platform = 'Uber'
+    file_token = ''
+    checkout_type = 'report'
+
+    if session_id:
+        try:
+            stripe_session = stripe.checkout.Session.retrieve(session_id)
+            meta = stripe_session.get('metadata') or {}
+            checkout_type = meta.get('type', 'report')
+            driver_name = meta.get('driver_name', 'Driver')
+            driver_city = meta.get('driver_city', 'Unknown')
+            platform = meta.get('platform', 'Uber')
+            file_token = meta.get('file_token', '')
+        except Exception:
+            pass
+
+    if checkout_type == 'lawfirm':
+        return """<!DOCTYPE html><html><head><title>FareAudit — Subscription Confirmed</title>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&display=swap" rel="stylesheet">
 <style>body{font-family:'Sora',sans-serif;background:#efefec;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
 .box{background:#fff;border-radius:12px;padding:2.5rem;max-width:480px;text-align:center;border:0.5px solid #e0dfd8}
 h1{font-size:24px;margin-bottom:8px}p{color:#666660;font-size:14px;line-height:1.6;margin-bottom:1.5rem}
 a{display:inline-block;background:#1a1a18;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-size:14px}</style>
 </head><body><div class="box">
-<h1>✓ Payment successful</h1>
-<p>Thank you! If your download didn't start automatically, email <strong>hello@fareaudit.app</strong> with your name and city and we'll send your report directly.</p>
+<div style="font-size:48px;margin-bottom:16px">&#127881;</div>
+<h1>Subscription confirmed!</h1>
+<p>Welcome to FareAudit for Law Firms. You now have unlimited access to driver audits and case-ready reports. We'll be in touch shortly with your account details.</p>
 <a href="/">Back to FareAudit</a>
 </div></body></html>"""
+
+    # Driver report — find stored file, process it, stream the real PDF
+    if file_token:
+        stored_path = None
+        for ext in ('.zip', '.csv'):
+            candidate = os.path.join(UPLOAD_STORE_DIR, file_token + ext)
+            if os.path.exists(candidate):
+                stored_path = candidate
+                break
+
+        if stored_path:
+            try:
+                if stored_path.endswith('.zip'):
+                    results = process_zip(stored_path)
+                    data = results.get('uber', list(results.values())[0]) if results else None
+                else:
+                    df = pd.read_csv(stored_path, low_memory=False)
+                    data = analyze_uber_data(df)
+
+                try:
+                    os.unlink(stored_path)
+                except Exception:
+                    pass
+
+                if data:
+                    pdf_buffer = generate_pdf_report(data, driver_name, driver_city, platform)
+                    filename = f'FareAudit_{driver_name.replace(" ", "_")}_{datetime.now().strftime("%Y%m%d")}.pdf'
+                    return send_file(
+                        pdf_buffer,
+                        mimetype='application/pdf',
+                        as_attachment=True,
+                        download_name=filename,
+                    )
+            except Exception:
+                pass
+
+    # Fallback — file missing, expired, or processing failed
+    return f"""<!DOCTYPE html><html><head><title>FareAudit — Thank You</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{{font-family:'Sora',sans-serif;background:#efefec;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}}
+.box{{background:#fff;border-radius:12px;padding:2.5rem;max-width:480px;text-align:center;border:0.5px solid #e0dfd8}}
+h1{{font-size:24px;margin-bottom:8px}}p{{color:#666660;font-size:14px;line-height:1.6;margin-bottom:1.5rem}}
+a{{display:inline-block;background:#1a1a18;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-size:14px}}</style>
+</head><body><div class="box">
+<div style="font-size:48px;margin-bottom:16px">&#10003;</div>
+<h1>Payment confirmed!</h1>
+<p>Thank you, {driver_name}. Your payment was successful but we were unable to locate your uploaded file &mdash; it may have expired. Please email <strong>hello@fareaudit.app</strong> with your receipt and we will generate your report manually within 24 hours.</p>
+<a href="/">Back to FareAudit</a>
+<p style="font-size:11px;color:#999992;margin-top:1rem">Session: {session_id[:16] if session_id else 'N/A'}&hellip;</p>
+</div></body></html>"""
+
 
 @app.route('/health')
 def health():
