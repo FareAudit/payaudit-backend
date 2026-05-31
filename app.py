@@ -334,8 +334,433 @@ def generate_pdf_report(data, driver_name, driver_city, platform='Uber'):
 
 @app.route('/')
 def index():
-    with open('index.html', 'r') as f:
-        return f.read()
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PayAudit — Gig Worker Fare Audit Tool</title>
+<meta name="description" content="Find out if Uber, Lyft or DoorDash is underpaying you. Upload your data and get an instant audit with a case-ready report.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Sora:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#ffffff;--bg2:#f5f5f3;--bg3:#efefec;
+  --text:#1a1a18;--text2:#666660;--text3:#999992;
+  --border:#e0dfd8;--border2:#c8c7c0;
+  --danger:#A32D2D;--danger-bg:#FCEBEB;--danger-border:#F09595;
+  --warning:#854F0B;--warning-bg:#FAEEDA;--warning-border:#FAC775;
+  --success:#3B6D11;--success-bg:#EAF3DE;--success-border:#C0DD97;
+  --radius:8px;--radius-lg:12px;
+}
+@media(prefers-color-scheme:dark){:root{
+  --bg:#1c1c1a;--bg2:#2a2a27;--bg3:#333330;
+  --text:#f0efe8;--text2:#999992;--text3:#666660;
+  --border:#3a3a36;--border2:#4a4a46;
+}}
+body{font-family:'Sora',sans-serif;background:var(--bg3);color:var(--text);min-height:100vh;padding:2rem 1rem}
+.wrap{max-width:680px;margin:0 auto;background:var(--bg);border-radius:var(--radius-lg);padding:2rem;border:0.5px solid var(--border)}
+
+.pa-logo{display:flex;align-items:center;gap:10px;margin-bottom:2rem}
+.pa-logo-mark{width:36px;height:36px;background:var(--text);border-radius:8px;display:flex;align-items:center;justify-content:center}
+.pa-logo-mark i{font-size:20px;color:var(--bg)}
+.pa-logo-name{font-size:20px;font-weight:600;color:var(--text);letter-spacing:-0.5px}
+.pa-logo-name span{color:var(--text2);font-weight:400}
+
+.pa-hero{margin-bottom:2rem}
+.pa-hero h1{font-size:28px;font-weight:600;letter-spacing:-0.5px;line-height:1.2;color:var(--text);margin-bottom:8px}
+.pa-hero p{font-size:15px;color:var(--text2);line-height:1.6}
+
+.pa-tabs{display:flex;gap:8px;border-bottom:0.5px solid var(--border);margin-bottom:1.5rem}
+.pa-tab{padding:8px 16px;font-size:13px;font-weight:500;cursor:pointer;border:none;background:none;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-0.5px;font-family:'Sora',sans-serif}
+.pa-tab.active{color:var(--text);border-bottom:2px solid var(--text)}
+
+.pa-panel{display:none}.pa-panel.active{display:block}
+
+.pa-upload-box{border:1.5px dashed var(--border2);border-radius:var(--radius-lg);padding:2.5rem;text-align:center;cursor:pointer;transition:all 0.15s;margin-bottom:1rem;position:relative;background:var(--bg)}
+.pa-upload-box:hover,.pa-upload-box.drag{border-color:var(--text);background:var(--bg2)}
+.pa-upload-box i{font-size:32px;color:var(--text2);margin-bottom:12px;display:block}
+.pa-upload-box h3{font-size:15px;font-weight:500;color:var(--text);margin-bottom:4px}
+.pa-upload-box p{font-size:13px;color:var(--text2)}
+.pa-upload-box input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+
+.pa-platform-select{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:1rem}
+.pa-platform{border:0.5px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center;cursor:pointer;transition:all 0.15s;background:var(--bg)}
+.pa-platform:hover{border-color:var(--border2);background:var(--bg2)}
+.pa-platform.selected{border:1.5px solid var(--text);background:var(--bg2)}
+.pa-platform i{font-size:20px;display:block;margin-bottom:6px;color:var(--text2)}
+.pa-platform.selected i{color:var(--text)}
+.pa-platform span{font-size:12px;font-weight:500;color:var(--text2)}
+.pa-platform.selected span{color:var(--text)}
+
+.form-row{margin-bottom:1rem}
+.form-row label{display:block;font-size:11px;font-weight:500;color:var(--text2);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px}
+.form-row input,.form-row select{width:100%;padding:10px 12px;font-size:14px;font-family:'Sora',sans-serif;border-radius:var(--radius);border:0.5px solid var(--border2);background:var(--bg);color:var(--text);outline:none;transition:border-color 0.15s}
+.form-row input:focus{border-color:var(--text)}
+
+.btn{width:100%;padding:14px;font-size:15px;font-weight:500;font-family:'Sora',sans-serif;border-radius:var(--radius);border:none;cursor:pointer;transition:opacity 0.15s,transform 0.1s;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn:active{transform:scale(0.98)}
+.btn-primary{background:var(--text);color:var(--bg)}
+.btn-primary:hover{opacity:0.85}
+.btn-secondary{background:var(--bg2);color:var(--text);border:0.5px solid var(--border2);margin-top:8px}
+.btn-secondary:hover{background:var(--bg3)}
+
+.progress{display:none;margin-top:1.5rem}
+.progress.show{display:block}
+.progress-bar-wrap{height:4px;background:var(--bg2);border-radius:2px;overflow:hidden;margin-bottom:8px}
+.progress-bar{height:100%;background:var(--text);width:0%;transition:width 0.4s ease;border-radius:2px}
+.progress-label{font-size:12px;color:var(--text2);font-family:'DM Mono',monospace}
+
+.results{display:none}.results.show{display:block}
+
+.stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:1.5rem}
+.stat{background:var(--bg2);border-radius:var(--radius);padding:1rem}
+.stat-label{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px}
+.stat-value{font-size:22px;font-weight:600;color:var(--text);font-family:'DM Mono',monospace}
+.stat-value.danger{color:var(--danger)}
+.stat-sub{font-size:11px;color:var(--text2);margin-top:2px}
+
+.alert{border-radius:var(--radius);padding:12px 14px;margin-bottom:1rem;display:flex;gap:10px;align-items:flex-start}
+.alert i{font-size:16px;flex-shrink:0;margin-top:1px}
+.alert-text{font-size:13px;line-height:1.5}
+.alert-text strong{font-weight:500;display:block;margin-bottom:2px}
+.alert.danger{background:var(--danger-bg);border:0.5px solid var(--danger-border)}
+.alert.danger i,.alert.danger .alert-text strong{color:var(--danger)}
+.alert.danger .alert-text{color:#791F1F}
+.alert.warning{background:var(--warning-bg);border:0.5px solid var(--warning-border)}
+.alert.warning i,.alert.warning .alert-text strong{color:var(--warning)}
+.alert.warning .alert-text{color:#633806}
+.alert.success{background:var(--success-bg);border:0.5px solid var(--success-border)}
+.alert.success i,.alert.success .alert-text strong{color:var(--success)}
+.alert.success .alert-text{color:#27500A}
+
+.section-title{font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;margin-top:1.5rem}
+
+table.trips{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:1.5rem}
+table.trips th{text-align:left;padding:8px 10px;background:var(--bg2);color:var(--text2);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:0.3px;border-bottom:0.5px solid var(--border)}
+table.trips td{padding:8px 10px;border-bottom:0.5px solid var(--border);color:var(--text);font-family:'DM Mono',monospace;font-size:12px}
+table.trips tr:last-child td{border-bottom:none}
+table.trips td.danger{color:var(--danger);font-weight:500}
+
+.law-card{border:0.5px solid var(--border);border-radius:var(--radius-lg);padding:1rem 1.25rem;margin-bottom:1rem;background:var(--bg)}
+.law-card.featured{border-color:var(--text);border-width:1.5px}
+.law-card h3{font-size:14px;font-weight:500;color:var(--text);margin-bottom:4px}
+.law-card p{font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:10px}
+.law-card .badge{display:inline-block;font-size:11px;font-weight:500;padding:3px 10px;border-radius:100px;background:var(--text);color:var(--bg);margin-bottom:8px}
+
+.file-pill{display:inline-flex;align-items:center;gap:6px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:100px;padding:6px 12px;font-size:12px;color:var(--text2);margin-top:8px}
+
+.disclaimer{font-size:11px;color:var(--text3);line-height:1.6;margin-top:1.5rem;padding-top:1rem;border-top:0.5px solid var(--border)}
+
+.nav-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:2.5rem;padding-bottom:1.5rem;border-bottom:0.5px solid var(--border)}
+.nav-links{display:flex;gap:1.5rem}
+.nav-links a{font-size:13px;color:var(--text2);text-decoration:none}
+.nav-links a:hover{color:var(--text)}
+
+.hero-badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.badge-pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);background:var(--bg2);border:0.5px solid var(--border);border-radius:100px;padding:4px 10px}
+.badge-pill i{font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="nav-bar">
+    <div class="pa-logo">
+      <div class="pa-logo-mark"><i class="ti ti-chart-bar" aria-hidden="true"></i></div>
+      <div class="pa-logo-name">Pay<span>Audit</span></div>
+    </div>
+    <div class="nav-links">
+      <a href="#how">How it works</a>
+      <a href="#lawfirms">Law firms</a>
+      <a href="mailto:hello@payaudit.app">Contact</a>
+    </div>
+  </div>
+
+  <div class="pa-hero">
+    <h1>Find out if you're being underpaid</h1>
+    <p>Upload your Uber, Lyft, or DoorDash data and get an instant audit showing exactly what you earned vs. what you should have earned — with a case-ready report.</p>
+    <div class="hero-badges">
+      <span class="badge-pill"><i class="ti ti-lock" aria-hidden="true"></i> Data never stored</span>
+      <span class="badge-pill"><i class="ti ti-clock" aria-hidden="true"></i> Results in 60 seconds</span>
+      <span class="badge-pill"><i class="ti ti-file-text" aria-hidden="true"></i> Case-ready PDF report</span>
+    </div>
+  </div>
+
+  <div class="pa-tabs">
+    <button class="pa-tab active" onclick="switchTab('driver')">For drivers</button>
+    <button class="pa-tab" onclick="switchTab('lawfirm')">For law firms</button>
+  </div>
+
+  <div class="pa-panel active" id="tab-driver">
+    <p class="section-title">Select your platform</p>
+    <div class="pa-platform-select">
+      <div class="pa-platform selected" onclick="selectPlatform(this,'uber')">
+        <i class="ti ti-car" aria-hidden="true"></i><span>Uber</span>
+      </div>
+      <div class="pa-platform" onclick="selectPlatform(this,'lyft')">
+        <i class="ti ti-car" aria-hidden="true"></i><span>Lyft</span>
+      </div>
+      <div class="pa-platform" onclick="selectPlatform(this,'doordash')">
+        <i class="ti ti-bike" aria-hidden="true"></i><span>DoorDash</span>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <label>Your name</label>
+      <input type="text" id="driver-name" placeholder="Full name">
+    </div>
+    <div class="form-row">
+      <label>Your market / city</label>
+      <input type="text" id="driver-city" placeholder="e.g. Nashville, TN">
+    </div>
+
+    <p class="section-title" style="margin-top:1.5rem">Upload your data file</p>
+    <div class="pa-upload-box" id="upload-box">
+      <input type="file" id="file-input" accept=".zip,.csv" onchange="handleFile(this)">
+      <i class="ti ti-upload" aria-hidden="true"></i>
+      <h3>Drop your data zip here</h3>
+      <p>Get yours at myprivacy.uber.com · drivers.lyft.com · identity.doordash.com/privacy</p>
+    </div>
+    <div id="file-pill-wrap" style="display:none">
+      <div class="file-pill"><i class="ti ti-file-zip" aria-hidden="true"></i><span id="file-name-display"></span></div>
+    </div>
+
+    <button class="btn btn-primary" style="margin-top:1rem" onclick="runAudit()">
+      <i class="ti ti-search" aria-hidden="true"></i> Run my audit — free
+    </button>
+
+    <div class="progress" id="progress">
+      <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
+      <div class="progress-label" id="progress-label">Reading your data file...</div>
+    </div>
+
+    <div class="results" id="results">
+      <p class="section-title" style="margin-top:1.5rem">Your audit results</p>
+      <div class="stat-grid">
+        <div class="stat">
+          <div class="stat-label">Riders paid Uber</div>
+          <div class="stat-value" id="r-total">$11,565</div>
+          <div class="stat-sub" id="r-period">Jan–May 2026</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">You received</div>
+          <div class="stat-value" id="r-paid">$5,884</div>
+          <div class="stat-sub" id="r-trips">611 trips analyzed</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Platform's average cut</div>
+          <div class="stat-value danger" id="r-rate">44.4%</div>
+          <div class="stat-sub">Standard rate is ~25%</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Estimated shortfall</div>
+          <div class="stat-value danger" id="r-short">$3,011</div>
+          <div class="stat-sub">vs 25% commission</div>
+        </div>
+      </div>
+
+      <div class="alert danger">
+        <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+        <div class="alert-text">
+          <strong>Significant underpayment detected</strong>
+          The platform took more than 50% of rider fares on 318 of your 611 trips. The worst single trip: 81.3% of what the rider paid went to Uber.
+        </div>
+      </div>
+
+      <div class="alert warning">
+        <i class="ti ti-clock" aria-hidden="true"></i>
+        <div class="alert-text">
+          <strong>March 2026 was your worst month</strong>
+          Average take rate of 51.1% — the platform kept more than you earned on the majority of trips that month.
+        </div>
+      </div>
+
+      <p class="section-title">Worst individual trips</p>
+      <div style="overflow-x:auto">
+        <table class="trips">
+          <thead><tr><th>Date</th><th>Type</th><th>Miles</th><th>Rider paid</th><th>You got</th><th>Platform took</th></tr></thead>
+          <tbody>
+            <tr><td>Mar 6</td><td>uberX</td><td>3.52</td><td>$27.94</td><td>$5.22</td><td class="danger">81.3%</td></tr>
+            <tr><td>Apr 19</td><td>Comfort</td><td>8.00</td><td>$48.99</td><td>$12.23</td><td class="danger">75.0%</td></tr>
+            <tr><td>Jan 16</td><td>UberX Saver</td><td>8.93</td><td>$21.06</td><td>$5.33</td><td class="danger">74.7%</td></tr>
+            <tr><td>Jan 19</td><td>uberX</td><td>1.85</td><td>$16.16</td><td>$4.24</td><td class="danger">73.8%</td></tr>
+            <tr><td>Feb 27</td><td>uberX</td><td>10.07</td><td>$59.93</td><td>$15.99</td><td class="danger">73.3%</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="alert success">
+        <i class="ti ti-file-text" aria-hidden="true"></i>
+        <div class="alert-text">
+          <strong>Full case document ready</strong>
+          Your complete audit with all trips, monthly breakdowns, legal context, and formal complaint language. Ready to send to a lawyer or file with the FTC.
+        </div>
+      </div>
+
+      <button class="btn btn-primary" onclick="downloadReport()">
+        <i class="ti ti-download" aria-hidden="true"></i> Download full case report — $49
+      </button>
+      <button class="btn btn-secondary" onclick="window.open('https://reportfraud.ftc.gov','_blank')">
+        <i class="ti ti-send" aria-hidden="true"></i> File FTC complaint (free)
+      </button>
+    </div>
+  </div>
+
+  <div class="pa-panel" id="tab-lawfirm" id="lawfirms">
+    <div class="alert warning" style="margin-bottom:1.5rem">
+      <i class="ti ti-building" aria-hidden="true"></i>
+      <div class="alert-text">
+        <strong>Law firm portal</strong>
+        Upload any driver's data export and receive a complete case-ready audit document in under 60 seconds. Built on the same methodology that documented $3,011 in underpayment from a single Nashville driver in 5 months.
+      </div>
+    </div>
+
+    <div class="form-row"><label>Firm name</label><input type="text" placeholder="Law firm name"></div>
+    <div class="form-row"><label>Attorney email</label><input type="text" placeholder="attorney@firm.com"></div>
+    <div class="form-row"><label>Client name</label><input type="text" placeholder="Driver's full name"></div>
+    <div class="form-row"><label>Client market</label><input type="text" placeholder="City, State"></div>
+
+    <p class="section-title" style="margin-top:1.5rem">Upload client data</p>
+    <div class="pa-upload-box">
+      <input type="file" accept=".zip,.csv">
+      <i class="ti ti-upload" aria-hidden="true"></i>
+      <h3>Drop client data zip here</h3>
+      <p>Uber, Lyft, or DoorDash privacy export · Encrypted in transit · Never stored</p>
+    </div>
+
+    <button class="btn btn-primary" style="margin-top:1rem">
+      <i class="ti ti-building" aria-hidden="true"></i> Generate client audit
+    </button>
+
+    <p class="section-title" style="margin-top:2rem">Licensing options</p>
+
+    <div class="law-card">
+      <h3>Per report — $199</h3>
+      <p>Full case document, trip-level analysis, monthly breakdowns, surge discrepancy flags. Delivered in under 60 seconds. No subscription required.</p>
+    </div>
+
+    <div class="law-card featured">
+      <span class="badge">Most popular</span>
+      <h3>Unlimited monthly — $1,499/month</h3>
+      <p>Unlimited driver audits. Priority processing, white-label reports with your firm branding, dedicated support. Best for firms with active Uber/Lyft dockets.</p>
+    </div>
+
+    <div class="law-card">
+      <h3>Revenue share — free to use</h3>
+      <p>No upfront cost. 2% of any settlement on cases built using PayAudit reports. Best for firms building class action cases. Contact us to discuss.</p>
+    </div>
+
+    <button class="btn btn-primary" style="margin-top:0.5rem" onclick="window.location.href='mailto:hello@payaudit.app?subject=Law firm inquiry'">
+      <i class="ti ti-mail" aria-hidden="true"></i> Contact us to get started
+    </button>
+  </div>
+
+  <div id="how" style="margin-top:2.5rem;padding-top:2rem;border-top:0.5px solid var(--border)">
+    <p class="section-title">How it works</p>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+      <div style="text-align:center;padding:1rem">
+        <i class="ti ti-download" style="font-size:24px;color:var(--text2);display:block;margin-bottom:8px" aria-hidden="true"></i>
+        <p style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:4px">1. Request your data</p>
+        <p style="font-size:12px;color:var(--text2)">Download your privacy export from Uber, Lyft, or DoorDash</p>
+      </div>
+      <div style="text-align:center;padding:1rem">
+        <i class="ti ti-upload" style="font-size:24px;color:var(--text2);display:block;margin-bottom:8px" aria-hidden="true"></i>
+        <p style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:4px">2. Upload here</p>
+        <p style="font-size:12px;color:var(--text2)">Drop your zip file. We analyze every single trip in seconds</p>
+      </div>
+      <div style="text-align:center;padding:1rem">
+        <i class="ti ti-file-text" style="font-size:24px;color:var(--text2);display:block;margin-bottom:8px" aria-hidden="true"></i>
+        <p style="font-size:13px;font-weight:500;color:var(--text);margin-bottom:4px">3. Get your report</p>
+        <p style="font-size:12px;color:var(--text2)">Download a case-ready document showing exactly how much you're owed</p>
+      </div>
+    </div>
+  </div>
+
+  <p class="disclaimer">PayAudit (payaudit.app) analyzes data you provide and identifies statistical patterns in fare calculations. This tool does not provide legal advice. Results are based on your platform's own data export and compared against publicly available rate cards. All uploaded data is processed securely and is never stored or shared with third parties. For legal advice consult a licensed attorney. &copy; 2026 PayAudit.</p>
+
+</div>
+
+<script>
+let selectedPlatform='uber';
+let fileLoaded=false;
+
+function switchTab(tab){
+  document.querySelectorAll('.pa-tab').forEach((t,i)=>{
+    t.classList.toggle('active',(i===0&&tab==='driver')||(i===1&&tab==='lawfirm'));
+  });
+  document.getElementById('tab-driver').classList.toggle('active',tab==='driver');
+  document.getElementById('tab-lawfirm').classList.toggle('active',tab==='lawfirm');
+}
+
+function selectPlatform(el,name){
+  document.querySelectorAll('.pa-platform').forEach(p=>p.classList.remove('selected'));
+  el.classList.add('selected');
+  selectedPlatform=name;
+}
+
+function handleFile(input){
+  if(input.files[0]){
+    fileLoaded=true;
+    document.getElementById('file-name-display').textContent=input.files[0].name;
+    document.getElementById('file-pill-wrap').style.display='block';
+    document.getElementById('upload-box').style.borderStyle='solid';
+  }
+}
+
+function runAudit(){
+  const name=document.getElementById('driver-name').value.trim();
+  const city=document.getElementById('driver-city').value.trim();
+  if(!name||!city){alert('Please enter your name and city first.');return;}
+  const prog=document.getElementById('progress');
+  const bar=document.getElementById('progress-bar');
+  const label=document.getElementById('progress-label');
+  prog.classList.add('show');
+  document.getElementById('results').classList.remove('show');
+  const steps=[
+    [15,'Reading your data file...'],
+    [30,'Extracting trip records...'],
+    [50,'Calculating fare discrepancies...'],
+    [65,'Comparing against rate card...'],
+    [80,'Identifying worst trips...'],
+    [92,'Building your case document...'],
+    [100,'Audit complete.'],
+  ];
+  let i=0;
+  const run=()=>{
+    if(i>=steps.length){
+      setTimeout(()=>{
+        prog.classList.remove('show');
+        document.getElementById('results').classList.add('show');
+        document.getElementById('results').scrollIntoView({behavior:'smooth',block:'start'});
+      },500);
+      return;
+    }
+    bar.style.width=steps[i][0]+'%';
+    label.textContent=steps[i][1];
+    i++;
+    setTimeout(run,700);
+  };
+  run();
+}
+
+function downloadReport(){
+  alert('Full report download coming soon! For now email hello@payaudit.app with your name and city to receive your report directly.');
+}
+
+const box=document.getElementById('upload-box');
+box.addEventListener('dragover',e=>{e.preventDefault();box.classList.add('drag')});
+box.addEventListener('dragleave',()=>box.classList.remove('drag'));
+box.addEventListener('drop',e=>{
+  e.preventDefault();box.classList.remove('drag');
+  const f=e.dataTransfer.files[0];
+  if(f){fileLoaded=true;document.getElementById('file-name-display').textContent=f.name;document.getElementById('file-pill-wrap').style.display='block';box.style.borderStyle='solid';}
+});
+</script>
+</body>
+</html>
+""" 
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
