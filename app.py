@@ -38,6 +38,11 @@ def allowed_file(filename):
 def analyze_uber_data(df):
     df = df[df['status'] == 'completed'].copy() if 'status' in df.columns else df.copy()
     df = df[df['original_fare_usd'] > 0].copy() if 'original_fare_usd' in df.columns else df.copy()
+    fare_components = ['base_fare_usd','surge_fare_usd','per_mile_fare_usd','per_minute_fare_usd','wait_time_fare_usd','minimum_fare_roundup_usd']
+    available_cols = [c for c in fare_components if c in df.columns]
+    df['driver_pay_calc'] = df[available_cols].fillna(0).sum(axis=1)
+    df['driver_upfront_fare_usd'] = df['driver_upfront_fare_usd'].fillna(df['driver_pay_calc'])
+    df = df[df['driver_upfront_fare_usd'] > 0].copy()
     if len(df) == 0:
         return None
     df['duration_min'] = (df['trip_duration_seconds'] / 60).round(2)
