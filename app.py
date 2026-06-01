@@ -335,8 +335,8 @@ table.trips td.danger{color:var(--danger);font-weight:500}
 .hero-badges{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 .badge-pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);background:var(--bg2);border:0.5px solid var(--border);border-radius:100px;padding:4px 10px}
 .badge-pill i{font-size:13px}
-.blurred{filter:blur(4px);user-select:none;pointer-events:none}
 .paywall-overlay{position:relative;margin-bottom:1rem}
+.paywall-overlay .blurred{filter:blur(4px);user-select:none;pointer-events:none}
 .paywall-overlay .blur-msg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--bg);border:1px solid var(--border2);border-radius:var(--radius);padding:12px 20px;font-size:13px;font-weight:500;color:var(--text);text-align:center;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.15)}
 </style>
 </head>
@@ -395,9 +395,9 @@ table.trips td.danger{color:var(--danger);font-weight:500}
     <p class="section-title" style="margin-top:1.5rem">Upload your data file</p>
     <div class="pa-upload-box" id="upload-box">
       <input type="file" id="file-input" accept=".zip,.csv" onchange="handleFile(this)">
-      <i class="ti ti-upload"></i>
-      <h3>Drop your data zip here</h3>
-      <p>Get yours at myprivacy.uber.com · drivers.lyft.com · identity.doordash.com/privacy</p>
+      <i class="ti ti-upload" id="upload-icon"></i>
+      <h3 id="upload-title">Drop your data zip here</h3>
+      <p id="upload-sub">Get yours at myprivacy.uber.com · drivers.lyft.com · identity.doordash.com/privacy</p>
     </div>
     <div id="file-pill-wrap" style="display:none">
       <div class="file-pill"><i class="ti ti-file-zip"></i><span id="file-name-display"></span></div>
@@ -551,6 +551,7 @@ table.trips td.danger{color:var(--danger);font-weight:500}
 let selectedPlatform = 'uber';
 let driverName = '';
 let driverCity = '';
+let fileSelected = false;
 
 function switchTab(tab) {
   document.querySelectorAll('.pa-tab').forEach((t,i) => {
@@ -568,18 +569,21 @@ function selectPlatform(el, name) {
 
 function handleFile(input) {
   if (input.files[0]) {
+    fileSelected = true;
     document.getElementById('file-name-display').textContent = input.files[0].name;
     document.getElementById('file-pill-wrap').style.display = 'block';
     document.getElementById('upload-box').style.borderStyle = 'solid';
+    document.getElementById('upload-icon').className = 'ti ti-check';
+    document.getElementById('upload-title').textContent = input.files[0].name;
+    document.getElementById('upload-sub').textContent = 'File ready — click Run my audit below';
   }
 }
 
 function runAudit() {
   driverName = document.getElementById('driver-name').value.trim();
   driverCity = document.getElementById('driver-city').value.trim();
-  const fileInput = document.getElementById('file-input');
   if (!driverName || !driverCity) { alert('Please enter your name and city.'); return; }
-  if (!fileInput.files[0]) { alert('Please upload your data file.'); return; }
+  if (!fileSelected) { alert('Please upload your data file.'); return; }
 
   const prog = document.getElementById('progress');
   const bar = document.getElementById('progress-bar');
@@ -649,16 +653,23 @@ async function buyLawFirm() {
   }
 }
 
+// Drag and drop
 const box = document.getElementById('upload-box');
+box.addEventListener('dragenter', e => { e.preventDefault(); box.classList.add('drag'); });
 box.addEventListener('dragover', e => { e.preventDefault(); box.classList.add('drag'); });
-box.addEventListener('dragleave', () => box.classList.remove('drag'));
+box.addEventListener('dragleave', e => { if (!box.contains(e.relatedTarget)) box.classList.remove('drag'); });
 box.addEventListener('drop', e => {
-  e.preventDefault(); box.classList.remove('drag');
+  e.preventDefault();
+  box.classList.remove('drag');
   const f = e.dataTransfer.files[0];
   if (f) {
+    fileSelected = true;
     document.getElementById('file-name-display').textContent = f.name;
     document.getElementById('file-pill-wrap').style.display = 'block';
     box.style.borderStyle = 'solid';
+    document.getElementById('upload-icon').className = 'ti ti-check';
+    document.getElementById('upload-title').textContent = f.name;
+    document.getElementById('upload-sub').textContent = 'File ready — click Run my audit below';
   }
 });
 </script>
@@ -678,6 +689,7 @@ def create_checkout():
                 payment_method_types=['card'],
                 line_items=[{'price': REPORT_PRICE_ID, 'quantity': 1}],
                 mode='payment',
+                allow_promotion_codes=True,
                 success_url=base_url + '/success?session_id={CHECKOUT_SESSION_ID}&name=' + data.get('name','Driver').replace(' ','+') + '&city=' + data.get('city','Unknown').replace(' ','+') + '&platform=' + data.get('platform','Uber'),
                 cancel_url=base_url + '/',
             )
@@ -686,6 +698,7 @@ def create_checkout():
                 payment_method_types=['card'],
                 line_items=[{'price': LAWFIRM_PRICE_ID, 'quantity': 1}],
                 mode='subscription',
+                allow_promotion_codes=True,
                 success_url=base_url + '/success?session_id={CHECKOUT_SESSION_ID}',
                 cancel_url=base_url + '/',
             )
@@ -706,7 +719,6 @@ def success():
     try:
         session = stripe.checkout.Session.retrieve(session_id)
         if session.payment_status == 'paid' or session.status == 'complete':
-            # Generate a real PDF with placeholder data since we don't store the file
             demo_data = {
                 'summary': {
                     'total_trips': 611, 'rider_total': 11565.91, 'driver_paid': 5883.94,
