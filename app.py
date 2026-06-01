@@ -38,11 +38,6 @@ def allowed_file(filename):
 def analyze_uber_data(df):
     df = df[df['status'] == 'completed'].copy() if 'status' in df.columns else df.copy()
     df = df[df['original_fare_usd'] > 0].copy() if 'original_fare_usd' in df.columns else df.copy()
-    fare_components = ['base_fare_usd','surge_fare_usd','per_mile_fare_usd','per_minute_fare_usd','wait_time_fare_usd','minimum_fare_roundup_usd']
-    available_cols = [c for c in fare_components if c in df.columns]
-    df['driver_pay_calc'] = df[available_cols].fillna(0).sum(axis=1)
-    df['driver_upfront_fare_usd'] = df['driver_upfront_fare_usd'].fillna(df['driver_pay_calc'])
-    df = df[df['driver_upfront_fare_usd'] > 0].copy()
     if len(df) == 0:
         return None
     df['duration_min'] = (df['trip_duration_seconds'] / 60).round(2)
@@ -84,21 +79,13 @@ def process_zip(zip_path):
     results = {}
     with zipfile.ZipFile(zip_path, 'r') as z:
         files = z.namelist()
-        trip_files = [f for f in files if 'driver_lifetime_trips' in f.lower() and f.endswith('.csv')]
-        if not trip_files:
-            trip_files = [f for f in files if f.endswith('.csv') and not f.startswith('__MACOSX')]
-        for trip_file in trip_files:
-            try:
-                with z.open(trip_file) as f:
-                    df = pd.read_csv(f, low_memory=False)
-                    if 'original_fare_usd' in df.columns and 'driver_upfront_fare_usd' in df.columns:
-                        analysis = analyze_uber_data(df)
-                        if analysis:
-                            results['uber'] = analysis
-                            break
-            except Exception as e:
-                print(f"Skipping {trip_file}: {e}")
-                continue
+        trip_files = [f for f in files if 'driver_lifetime_trips' in f and f.endswith('.csv')]
+        if trip_files:
+            with z.open(trip_files[0]) as f:
+                df = pd.read_csv(f, low_memory=False)
+                analysis = analyze_uber_data(df)
+                if analysis:
+                    results['uber'] = analysis
     return results
 
 def generate_pdf_report(data, driver_name, driver_city, platform='Uber'):
@@ -436,7 +423,7 @@ table.trips td.danger{color:var(--danger);font-weight:500}
     <div class="nav-links">
       <a href="#how">How it works</a>
       <a href="#lawfirms">Law firms</a>
-      <a href="mailto:hello@fareaudit.app">Contact</a>
+      <a href="mailto:FareAudit@pm.me">Contact</a>
     </div>
   </div>
 
@@ -601,7 +588,7 @@ table.trips td.danger{color:var(--danger);font-weight:500}
     <div class="law-card">
       <h3>Revenue share — free to use</h3>
       <p>No upfront cost. 2% of any settlement on cases built using FareAudit reports.</p>
-      <button class="btn btn-secondary" onclick="window.location.href='mailto:hello@fareaudit.app?subject=Law firm inquiry'">
+      <button class="btn btn-secondary" onclick="window.location.href='mailto:FareAudit@pm.me?subject=Law firm inquiry'">
         <i class="ti ti-mail"></i> Contact us
       </button>
     </div>
@@ -889,7 +876,7 @@ h1{font-size:24px;margin-bottom:8px}p{color:#666660;font-size:14px;line-height:1
 a{display:inline-block;background:#1a1a18;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-size:14px}</style>
 </head><body><div class="box">
 <h1>✓ Payment received</h1>
-<p>Your session expired before we could generate your report. Please email <strong>hello@fareaudit.app</strong> with your name and city and we'll send your report within 1 hour.</p>
+<p>Your session expired before we could generate your report. Please email <strong>FareAudit@pm.me</strong> with your name and city and we'll send your report within 1 hour.</p>
 <a href="/">Back to FareAudit</a>
 </div></body></html>"""
 
@@ -909,7 +896,7 @@ h1{font-size:24px;margin-bottom:8px}p{color:#666660;font-size:14px;line-height:1
 a{display:inline-block;background:#1a1a18;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-size:14px}</style>
 </head><body><div class="box">
 <h1>✓ Payment successful</h1>
-<p>Thank you! If your download didn't start automatically, email <strong>hello@fareaudit.app</strong> with your name and city and we'll send your report directly.</p>
+<p>Thank you! If your download didn't start automatically, email <strong>FareAudit@pm.me</strong> with your name and city and we'll send your report directly.</p>
 <a href="/">Back to FareAudit</a>
 </div></body></html>"""
 
