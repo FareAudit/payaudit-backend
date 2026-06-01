@@ -15,6 +15,7 @@ from reportlab.lib.units import inch
 from reportlab.lib import colors
 import io
 import stripe
+import uuid
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
@@ -22,10 +23,14 @@ app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
 STRIPE_PUBLISHABLE_KEY = os.environ.get('STRIPE_PUBLISHABLE_KEY')
 
-REPORT_PRICE_ID = 'price_1TdKNO3bJrZ5L0LWWpOJbTyJ'
-LAWFIRM_PRICE_ID = 'price_1TdKMn3bJrZ5L0LW0tKT2iQg'
+REPORT_PRICE_ID = os.environ.get('REPORT_PRICE_ID', 'price_1TdKNO3bJrZ5L0LWWpOJbTyJ')
+LAWFIRM_PRICE_ID = os.environ.get('LAWFIRM_PRICE_ID', 'price_1TdKMn3bJrZ5L0LW0tKT2iQg')
 
 ALLOWED_EXTENSIONS = {'zip', 'csv'}
+
+# In-memory session store: token -> {data, name, city, platform}
+# For production you'd use Redis, but this works fine on a single-replica Railway deploy
+SESSION_STORE = {}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -65,6 +70,8 @@ def analyze_uber_data(df):
         'date_start': df['date'].min().strftime('%b %d, %Y') if not df['date'].isna().all() else 'N/A',
         'date_end': df['date'].max().strftime('%b %d, %Y') if not df['date'].isna().all() else 'N/A',
         'city': df['city_name'].mode()[0] if 'city_name' in df.columns else 'Unknown',
+        'worst_month': monthly.loc[monthly['avg_take'].idxmax(), 'month'] if len(monthly) > 0 else 'N/A',
+        'worst_month_take': round(monthly['avg_take'].max(), 1) if len(monthly) > 0 else 0,
     }
     return {'summary': summary, 'monthly': monthly.to_dict('records'), 'worst_trips': worst.to_dict('records')}
 
@@ -225,6 +232,70 @@ def generate_pdf_report(data, driver_name, driver_city, platform='Uber'):
     buffer.seek(0)
     return buffer
 
+
+# ── NEW: real upload + analyze endpoint ──────────────────────────────────────
+
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    try:
+        driver_name = request.form.get('name', '').strip()
+        driver_city = request.form.get('city', '').strip()
+        platform = request.form.get('platform', 'uber').strip().lower()
+
+        if not driver_name or not driver_city:
+            return jsonify({'error': 'Name and city are required.'}), 400
+
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file uploaded.'}), 400
+
+        f = request.files['file']
+        if not f or not allowed_file(f.filename):
+            return jsonify({'error': 'Please upload a .zip or .csv file.'}), 400
+
+        # Save to a temp file
+        suffix = '.' + f.filename.rsplit('.', 1)[1].lower()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            f.save(tmp.name)
+            tmp_path = tmp.name
+
+        try:
+            if suffix == '.zip':
+                results = process_zip(tmp_path)
+                data = results.get('uber') or results.get(list(results.keys())[0]) if results else None
+            else:
+                df = pd.read_csv(tmp_path, low_memory=False)
+                data = analyze_uber_data(df)
+        finally:
+            os.unlink(tmp_path)
+
+        if not data:
+            return jsonify({'error': 'No completed trip data found in your file. Make sure you uploaded the correct Uber privacy export zip.'}), 400
+
+        # Store in session
+        token = str(uuid.uuid4())
+        SESSION_STORE[token] = {
+            'data': data,
+            'name': driver_name,
+            'city': driver_city,
+            'platform': platform,
+            'created': datetime.now().isoformat(),
+        }
+
+        summary = data['summary']
+        worst = data['worst_trips'][:3]
+
+        return jsonify({
+            'token': token,
+            'summary': summary,
+            'worst_trips': worst,
+            'monthly': data['monthly'],
+        })
+
+    except Exception as e:
+        print(f"Analyze error: {e}")
+        return jsonify({'error': f'Analysis failed: {str(e)}'}), 500
+
+
 @app.route('/')
 def index():
     return """<!DOCTYPE html>
@@ -338,6 +409,8 @@ table.trips td.danger{color:var(--danger);font-weight:500}
 .paywall-overlay{position:relative;margin-bottom:1rem}
 .paywall-overlay .blurred{filter:blur(4px);user-select:none;pointer-events:none}
 .paywall-overlay .blur-msg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--bg);border:1px solid var(--border2);border-radius:var(--radius);padding:12px 20px;font-size:13px;font-weight:500;color:var(--text);text-align:center;white-space:nowrap;box-shadow:0 4px 20px rgba(0,0,0,0.15)}
+.error-msg{background:var(--danger-bg);border:0.5px solid var(--danger-border);color:var(--danger);border-radius:var(--radius);padding:12px 14px;font-size:13px;margin-top:1rem;display:none}
+.error-msg.show{display:block}
 </style>
 </head>
 <body>
@@ -403,13 +476,15 @@ table.trips td.danger{color:var(--danger);font-weight:500}
       <div class="file-pill"><i class="ti ti-file-zip"></i><span id="file-name-display"></span></div>
     </div>
 
+    <div class="error-msg" id="error-msg"></div>
+
     <button class="btn btn-primary" style="margin-top:1rem" onclick="runAudit()">
       <i class="ti ti-search"></i> Run my audit — free
     </button>
 
     <div class="progress" id="progress">
       <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
-      <div class="progress-label" id="progress-label">Reading your data file...</div>
+      <div class="progress-label" id="progress-label">Uploading your data...</div>
     </div>
 
     <div class="results" id="results">
@@ -417,39 +492,39 @@ table.trips td.danger{color:var(--danger);font-weight:500}
       <div class="stat-grid">
         <div class="stat">
           <div class="stat-label">Riders paid platform</div>
-          <div class="stat-value" id="r-total">$11,565</div>
-          <div class="stat-sub" id="r-period">Jan–May 2026</div>
+          <div class="stat-value" id="r-total">—</div>
+          <div class="stat-sub" id="r-period">—</div>
         </div>
         <div class="stat">
           <div class="stat-label">You received</div>
-          <div class="stat-value" id="r-paid">$5,884</div>
-          <div class="stat-sub" id="r-trips">611 trips analyzed</div>
+          <div class="stat-value" id="r-paid">—</div>
+          <div class="stat-sub" id="r-trips">—</div>
         </div>
         <div class="stat">
           <div class="stat-label">Platform's average cut</div>
-          <div class="stat-value danger" id="r-rate">44.4%</div>
+          <div class="stat-value danger" id="r-rate">—</div>
           <div class="stat-sub">Standard rate is ~25%</div>
         </div>
         <div class="stat">
           <div class="stat-label">Estimated shortfall</div>
-          <div class="stat-value danger" id="r-short">$3,011</div>
+          <div class="stat-value danger" id="r-short">—</div>
           <div class="stat-sub">vs 25% commission</div>
         </div>
       </div>
 
-      <div class="alert danger">
+      <div class="alert danger" id="alert-main">
         <i class="ti ti-alert-triangle"></i>
         <div class="alert-text">
-          <strong>Significant underpayment detected</strong>
-          The platform took more than 50% of rider fares on 318 of your 611 trips. The worst single trip: 81.3% of what the rider paid went to Uber.
+          <strong id="alert-main-title">Significant underpayment detected</strong>
+          <span id="alert-main-body"></span>
         </div>
       </div>
 
-      <div class="alert warning">
+      <div class="alert warning" id="alert-month">
         <i class="ti ti-clock"></i>
         <div class="alert-text">
-          <strong>March 2026 was your worst month</strong>
-          Average take rate of 51.1% — the platform kept more than you earned on the majority of trips that month.
+          <strong id="alert-month-title">—</strong>
+          <span id="alert-month-body"></span>
         </div>
       </div>
 
@@ -457,21 +532,17 @@ table.trips td.danger{color:var(--danger);font-weight:500}
       <div style="overflow-x:auto">
         <table class="trips">
           <thead><tr><th>Date</th><th>Type</th><th>Miles</th><th>Rider paid</th><th>You got</th><th>Platform took</th></tr></thead>
-          <tbody>
-            <tr><td>Mar 6</td><td>uberX</td><td>3.52</td><td>$27.94</td><td>$5.22</td><td class="danger">81.3%</td></tr>
-            <tr><td>Apr 19</td><td>Comfort</td><td>8.00</td><td>$48.99</td><td>$12.23</td><td class="danger">75.0%</td></tr>
-            <tr><td>Jan 16</td><td>UberX Saver</td><td>8.93</td><td>$21.06</td><td>$5.33</td><td class="danger">74.7%</td></tr>
-          </tbody>
+          <tbody id="worst-trips-body"></tbody>
         </table>
       </div>
 
       <div class="paywall-overlay">
-        <table class="trips blurred">
+        <table class="trips blurred" id="blurred-trips">
           <tbody>
-            <tr><td>Jan 19</td><td>uberX</td><td>1.85</td><td>$16.16</td><td>$4.24</td><td class="danger">73.8%</td></tr>
-            <tr><td>Feb 27</td><td>uberX</td><td>10.07</td><td>$59.93</td><td>$15.99</td><td class="danger">73.3%</td></tr>
-            <tr><td>Jan 19</td><td>uberX</td><td>12.02</td><td>$28.42</td><td>$7.71</td><td class="danger">72.9%</td></tr>
-            <tr><td>Apr 17</td><td>Comfort</td><td>0.07</td><td>$26.07</td><td>$7.39</td><td class="danger">71.7%</td></tr>
+            <tr><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td class="danger">—%</td></tr>
+            <tr><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td class="danger">—%</td></tr>
+            <tr><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td class="danger">—%</td></tr>
+            <tr><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td class="danger">—%</td></tr>
           </tbody>
         </table>
         <div class="blur-msg">🔒 Unlock full report — $49</div>
@@ -549,9 +620,8 @@ table.trips td.danger{color:var(--danger);font-weight:500}
 
 <script>
 let selectedPlatform = 'uber';
-let driverName = '';
-let driverCity = '';
-let fileSelected = false;
+let auditToken = null;
+let auditSummary = null;
 
 function switchTab(tab) {
   document.querySelectorAll('.pa-tab').forEach((t,i) => {
@@ -569,7 +639,6 @@ function selectPlatform(el, name) {
 
 function handleFile(input) {
   if (input.files[0]) {
-    fileSelected = true;
     document.getElementById('file-name-display').textContent = input.files[0].name;
     document.getElementById('file-pill-wrap').style.display = 'block';
     document.getElementById('upload-box').style.borderStyle = 'solid';
@@ -579,62 +648,124 @@ function handleFile(input) {
   }
 }
 
-function runAudit() {
-  driverName = document.getElementById('driver-name').value.trim();
-  driverCity = document.getElementById('driver-city').value.trim();
-  if (!driverName || !driverCity) { alert('Please enter your name and city.'); return; }
-  if (!fileSelected) { alert('Please upload your data file.'); return; }
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = msg;
+  el.classList.add('show');
+}
+
+function hideError() {
+  document.getElementById('error-msg').classList.remove('show');
+}
+
+function setProgress(pct, label) {
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-label').textContent = label;
+}
+
+async function runAudit() {
+  const driverName = document.getElementById('driver-name').value.trim();
+  const driverCity = document.getElementById('driver-city').value.trim();
+  const fileInput = document.getElementById('file-input');
+
+  hideError();
+
+  if (!driverName || !driverCity) { showError('Please enter your name and city.'); return; }
+  if (!fileInput.files[0]) { showError('Please upload your data file.'); return; }
 
   const prog = document.getElementById('progress');
-  const bar = document.getElementById('progress-bar');
-  const label = document.getElementById('progress-label');
   prog.classList.add('show');
   document.getElementById('results').classList.remove('show');
+  setProgress(10, 'Uploading your data file...');
 
-  const steps = [
-    [15,'Reading your data file...'],
-    [30,'Extracting trip records...'],
-    [50,'Calculating fare discrepancies...'],
-    [65,'Comparing against rate card...'],
-    [80,'Identifying worst trips...'],
-    [92,'Building your case document...'],
-    [100,'Audit complete.'],
-  ];
-  let i = 0;
-  const run = () => {
-    if (i >= steps.length) {
-      setTimeout(() => {
-        prog.classList.remove('show');
-        document.getElementById('results').classList.add('show');
-        document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
-      }, 500);
+  try {
+    const formData = new FormData();
+    formData.append('name', driverName);
+    formData.append('city', driverCity);
+    formData.append('platform', selectedPlatform);
+    formData.append('file', fileInput.files[0]);
+
+    setProgress(30, 'Analyzing your trips...');
+
+    const res = await fetch('/analyze', { method: 'POST', body: formData });
+    
+    setProgress(70, 'Calculating fare discrepancies...');
+
+    const result = await res.json();
+
+    if (!res.ok || result.error) {
+      prog.classList.remove('show');
+      showError(result.error || 'Analysis failed. Please try again.');
       return;
     }
-    bar.style.width = steps[i][0] + '%';
-    label.textContent = steps[i][1];
-    i++;
-    setTimeout(run, 700);
-  };
-  run();
+
+    setProgress(90, 'Building your results...');
+    await new Promise(r => setTimeout(r, 400));
+    setProgress(100, 'Audit complete.');
+    await new Promise(r => setTimeout(r, 400));
+
+    auditToken = result.token;
+    auditSummary = result.summary;
+
+    // Populate stats
+    document.getElementById('r-total').textContent = '$' + result.summary.rider_total.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    document.getElementById('r-paid').textContent = '$' + result.summary.driver_paid.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    document.getElementById('r-rate').textContent = result.summary.avg_take_rate + '%';
+    document.getElementById('r-short').textContent = '$' + result.summary.total_shortfall.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+    document.getElementById('r-period').textContent = result.summary.date_start + ' – ' + result.summary.date_end;
+    document.getElementById('r-trips').textContent = result.summary.total_trips + ' trips analyzed';
+
+    // Alerts
+    const pct50 = result.summary.trips_over_50pct;
+    const total = result.summary.total_trips;
+    document.getElementById('alert-main-body').textContent =
+      'The platform took more than 50% of rider fares on ' + pct50 + ' of your ' + total + ' trips. The worst single trip: ' + result.summary.worst_take_rate + '% of what the rider paid went to the platform.';
+    document.getElementById('alert-month-title').textContent = result.summary.worst_month + ' was your worst month';
+    document.getElementById('alert-month-body').textContent =
+      'Average take rate of ' + result.summary.worst_month_take + '% — the platform kept more than you earned on the majority of trips that month.';
+
+    // Worst trips table
+    const tbody = document.getElementById('worst-trips-body');
+    tbody.innerHTML = '';
+    result.worst_trips.slice(0, 3).forEach(t => {
+      const row = document.createElement('tr');
+      const date = String(t.begintrip_timestamp_local || '').slice(0,10);
+      row.innerHTML = `<td>${date}</td><td>${t.product_type_name||'N/A'}</td><td>${(t.trip_distance_miles||0).toFixed(2)}</td><td>$${(t.original_fare_usd||0).toFixed(2)}</td><td>$${(t.driver_upfront_fare_usd||0).toFixed(2)}</td><td class="danger">${(t.uber_take_rate||0).toFixed(1)}%</td>`;
+      tbody.appendChild(row);
+    });
+
+    prog.classList.remove('show');
+    document.getElementById('results').classList.add('show');
+    document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
+
+  } catch(e) {
+    prog.classList.remove('show');
+    showError('Something went wrong. Please try again.');
+    console.error(e);
+  }
 }
 
 async function buyReport() {
+  if (!auditToken) { showError('Please run your audit first.'); return; }
   try {
+    const driverName = document.getElementById('driver-name').value.trim();
+    const driverCity = document.getElementById('driver-city').value.trim();
     const res = await fetch('/create-checkout', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         type: 'report',
-        name: driverName || 'Driver',
-        city: driverCity || 'Unknown',
+        token: auditToken,
+        name: driverName,
+        city: driverCity,
         platform: selectedPlatform
       })
     });
     const data = await res.json();
     if (data.url) window.location.href = data.url;
-    else alert('Payment setup error. Please try again.');
+    else showError('Payment setup error. Please try again.');
   } catch(e) {
-    alert('Something went wrong. Please try again.');
+    showError('Something went wrong. Please try again.');
   }
 }
 
@@ -665,9 +796,7 @@ box.addEventListener('drop', e => {
   if (f) {
     const dt = new DataTransfer();
     dt.items.add(f);
-    const fileInput = document.getElementById('file-input');
-    fileInput.files = dt.files;
-    fileSelected = true;
+    document.getElementById('file-input').files = dt.files;
     document.getElementById('file-name-display').textContent = f.name;
     document.getElementById('file-pill-wrap').style.display = 'block';
     box.style.borderStyle = 'solid';
@@ -689,12 +818,16 @@ def create_checkout():
         base_url = 'https://fareaudit.app'
 
         if checkout_type == 'report':
+            token = data.get('token', '')
+            name = data.get('name', 'Driver')
+            city = data.get('city', 'Unknown')
+            platform = data.get('platform', 'uber')
             session = stripe.checkout.Session.create(
                 payment_method_types=['card'],
                 line_items=[{'price': REPORT_PRICE_ID, 'quantity': 1}],
                 mode='payment',
                 allow_promotion_codes=True,
-                success_url=base_url + '/success?session_id={CHECKOUT_SESSION_ID}&name=' + data.get('name','Driver').replace(' ','+') + '&city=' + data.get('city','Unknown').replace(' ','+') + '&platform=' + data.get('platform','Uber'),
+                success_url=base_url + '/success?session_id={CHECKOUT_SESSION_ID}&token=' + token + '&name=' + name.replace(' ','+') + '&city=' + city.replace(' ','+') + '&platform=' + platform,
                 cancel_url=base_url + '/',
             )
         elif checkout_type == 'lawfirm':
@@ -711,11 +844,13 @@ def create_checkout():
 
         return jsonify({'url': session.url})
     except Exception as e:
+        print(f"Stripe error: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/success')
 def success():
     session_id = request.args.get('session_id')
+    token = request.args.get('token', '')
     driver_name = request.args.get('name', 'Driver').replace('+', ' ')
     driver_city = request.args.get('city', 'Unknown').replace('+', ' ')
     platform = request.args.get('platform', 'Uber')
@@ -723,33 +858,35 @@ def success():
     try:
         session = stripe.checkout.Session.retrieve(session_id)
         if session.payment_status == 'paid' or session.status == 'complete':
-            demo_data = {
-                'summary': {
-                    'total_trips': 611, 'rider_total': 11565.91, 'driver_paid': 5883.94,
-                    'uber_kept': 5681.97, 'avg_take_rate': 44.4, 'trips_over_50pct': 318,
-                    'trips_over_40pct': 449, 'total_shortfall': 3011.72, 'worst_take_rate': 81.3,
-                    'date_start': 'Jan 01, 2026', 'date_end': 'May 23, 2026', 'city': driver_city
-                },
-                'monthly': [
-                    {'month': '2026-01', 'trips': 173, 'rider_total': 2813.51, 'driver_paid': 1384.78, 'avg_take': 46.8, 'shortfall': 750.75},
-                    {'month': '2026-02', 'trips': 106, 'rider_total': 1843.45, 'driver_paid': 891.29, 'avg_take': 49.2, 'shortfall': 502.74},
-                    {'month': '2026-03', 'trips': 129, 'rider_total': 2697.85, 'driver_paid': 1236.46, 'avg_take': 51.1, 'shortfall': 798.34},
-                    {'month': '2026-04', 'trips': 88, 'rider_total': 2169.44, 'driver_paid': 1085.82, 'avg_take': 43.3, 'shortfall': 592.75},
-                    {'month': '2026-05', 'trips': 115, 'rider_total': 2041.66, 'driver_paid': 1285.59, 'avg_take': 29.5, 'shortfall': 367.14},
-                ],
-                'worst_trips': [
-                    {'begintrip_timestamp_local': '2026-03-06', 'product_type_name': 'uberX', 'trip_distance_miles': 3.52, 'duration_min': 17.7, 'original_fare_usd': 27.94, 'driver_upfront_fare_usd': 5.22, 'uber_take_rate': 81.3},
-                    {'begintrip_timestamp_local': '2026-04-19', 'product_type_name': 'Comfort', 'trip_distance_miles': 8.00, 'duration_min': 13.4, 'original_fare_usd': 48.99, 'driver_upfront_fare_usd': 12.23, 'uber_take_rate': 75.0},
-                    {'begintrip_timestamp_local': '2026-01-16', 'product_type_name': 'UberX Saver', 'trip_distance_miles': 8.93, 'duration_min': 11.8, 'original_fare_usd': 21.06, 'driver_upfront_fare_usd': 5.33, 'uber_take_rate': 74.7},
-                    {'begintrip_timestamp_local': '2026-01-19', 'product_type_name': 'uberX', 'trip_distance_miles': 1.85, 'duration_min': 5.8, 'original_fare_usd': 16.16, 'driver_upfront_fare_usd': 4.24, 'uber_take_rate': 73.8},
-                    {'begintrip_timestamp_local': '2026-02-27', 'product_type_name': 'uberX', 'trip_distance_miles': 10.07, 'duration_min': 25.5, 'original_fare_usd': 59.93, 'driver_upfront_fare_usd': 15.99, 'uber_take_rate': 73.3},
-                ]
-            }
-            pdf = generate_pdf_report(demo_data, driver_name, driver_city, platform)
+            # Use real session data if available, otherwise log a warning
+            session_data = SESSION_STORE.get(token)
+            if session_data:
+                data = session_data['data']
+                driver_name = session_data.get('name', driver_name)
+                driver_city = session_data.get('city', driver_city)
+                platform = session_data.get('platform', platform)
+            else:
+                # Token expired or missing — this shouldn't happen in normal flow
+                print(f"WARNING: No session data found for token {token}")
+                return """<!DOCTYPE html><html><head><title>FareAudit</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&display=swap" rel="stylesheet">
+<style>body{font-family:'Sora',sans-serif;background:#efefec;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+.box{background:#fff;border-radius:12px;padding:2.5rem;max-width:480px;text-align:center;border:0.5px solid #e0dfd8}
+h1{font-size:24px;margin-bottom:8px}p{color:#666660;font-size:14px;line-height:1.6;margin-bottom:1.5rem}
+a{display:inline-block;background:#1a1a18;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-size:14px}</style>
+</head><body><div class="box">
+<h1>✓ Payment received</h1>
+<p>Your session expired before we could generate your report. Please email <strong>hello@fareaudit.app</strong> with your name and city and we'll send your report within 1 hour.</p>
+<a href="/">Back to FareAudit</a>
+</div></body></html>"""
+
+            pdf = generate_pdf_report(data, driver_name, driver_city, platform.capitalize())
+            # Clean up session to free memory
+            SESSION_STORE.pop(token, None)
             return send_file(pdf, mimetype='application/pdf', as_attachment=True,
                            download_name=f'FareAudit_{driver_name.replace(" ","_")}.pdf')
     except Exception as e:
-        pass
+        print(f"Success route error: {e}")
 
     return """<!DOCTYPE html><html><head><title>FareAudit — Thank You</title>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&display=swap" rel="stylesheet">
