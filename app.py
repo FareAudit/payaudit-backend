@@ -79,13 +79,21 @@ def process_zip(zip_path):
     results = {}
     with zipfile.ZipFile(zip_path, 'r') as z:
         files = z.namelist()
-        trip_files = [f for f in files if 'driver_lifetime_trips' in f and f.endswith('.csv')]
-        if trip_files:
-            with z.open(trip_files[0]) as f:
-                df = pd.read_csv(f, low_memory=False)
-                analysis = analyze_uber_data(df)
-                if analysis:
-                    results['uber'] = analysis
+        trip_files = [f for f in files if 'driver_lifetime_trips' in f.lower() and f.endswith('.csv')]
+        if not trip_files:
+            trip_files = [f for f in files if f.endswith('.csv') and not f.startswith('__MACOSX')]
+        for trip_file in trip_files:
+            try:
+                with z.open(trip_file) as f:
+                    df = pd.read_csv(f, low_memory=False)
+                    if 'original_fare_usd' in df.columns and 'driver_upfront_fare_usd' in df.columns:
+                        analysis = analyze_uber_data(df)
+                        if analysis:
+                            results['uber'] = analysis
+                            break
+            except Exception as e:
+                print(f"Skipping {trip_file}: {e}")
+                continue
     return results
 
 def generate_pdf_report(data, driver_name, driver_city, platform='Uber'):
