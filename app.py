@@ -663,6 +663,10 @@ box.addEventListener('drop', e => {
   box.classList.remove('drag');
   const f = e.dataTransfer.files[0];
   if (f) {
+    const dt = new DataTransfer();
+    dt.items.add(f);
+    const fileInput = document.getElementById('file-input');
+    fileInput.files = dt.files;
     fileSelected = true;
     document.getElementById('file-name-display').textContent = f.name;
     document.getElementById('file-pill-wrap').style.display = 'block';
