@@ -436,7 +436,7 @@ table.trips td.danger{color:var(--danger);font-weight:500}
     <div class="nav-links">
       <a href="#how">How it works</a>
       <a href="#lawfirms">Law firms</a>
-      <a href="mailto:hello@fareaudit.app">Contact</a>
+      <a href="mailto:FareAudit@pm.me">Contact</a>
     </div>
   </div>
 
@@ -601,7 +601,7 @@ table.trips td.danger{color:var(--danger);font-weight:500}
     <div class="law-card">
       <h3>Revenue share — free to use</h3>
       <p>No upfront cost. 2% of any settlement on cases built using FareAudit reports.</p>
-      <button class="btn btn-secondary" onclick="window.location.href='mailto:hello@fareaudit.app?subject=Law firm inquiry'">
+      <button class="btn btn-secondary" onclick="window.location.href='mailto:FareAudit@pm.me?subject=Law firm inquiry'">
         <i class="ti ti-mail"></i> Contact us
       </button>
     </div>
@@ -889,7 +889,7 @@ h1{font-size:24px;margin-bottom:8px}p{color:#666660;font-size:14px;line-height:1
 a{display:inline-block;background:#1a1a18;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-size:14px}</style>
 </head><body><div class="box">
 <h1>✓ Payment received</h1>
-<p>Your session expired before we could generate your report. Please email <strong>hello@fareaudit.app</strong> with your name and city and we'll send your report within 1 hour.</p>
+<p>Your session expired before we could generate your report. Please email <strong>FareAudit@pm.me</strong> with your name and city and we'll send your report within 1 hour.</p>
 <a href="/">Back to FareAudit</a>
 </div></body></html>"""
 
@@ -909,7 +909,7 @@ h1{font-size:24px;margin-bottom:8px}p{color:#666660;font-size:14px;line-height:1
 a{display:inline-block;background:#1a1a18;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-size:14px}</style>
 </head><body><div class="box">
 <h1>✓ Payment successful</h1>
-<p>Thank you! If your download didn't start automatically, email <strong>hello@fareaudit.app</strong> with your name and city and we'll send your report directly.</p>
+<p>Thank you! If your download didn't start automatically, email <strong>FareAudit@pm.me</strong> with your name and city and we'll send your report directly.</p>
 <a href="/">Back to FareAudit</a>
 </div></body></html>"""
 
